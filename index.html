@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visitas Binifadet · Administración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#faf7f2; --surface:#ffffff; --ink:#211d19; --muted:#8c8377;
+    --line:#e9e2d6; --line-strong:#d9cfc0;
+    --wine:#6e1423; --wine-2:#8a1c30; --wine-soft:#f5e8ea;
+    --gold:#b0863a; --gold-soft:#f6efe1;
+    --green:#2f7d4f; --green-soft:#e7f3ec;
+    --red:#b3261e; --red-soft:#fbeae9;
+    --amber:#9a6b16; --amber-soft:#fbf2dd;
+    --radius:12px; --shadow:0 1px 2px rgba(33,29,25,.04),0 4px 16px rgba(33,29,25,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,sans-serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{font-family:"Fraunces",Georgia,serif;font-weight:500;letter-spacing:-.01em;margin:0}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px}
+  a{color:var(--wine)}
+
+  /* ---------- Login ---------- */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .login-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:40px;width:100%;max-width:380px}
+  .login-card .brand{font-family:"Fraunces",serif;font-size:26px;color:var(--wine);margin-bottom:4px}
+  .login-card .sub{color:var(--muted);margin-bottom:28px;font-size:13px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px}
+  .field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink)}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--wine);box-shadow:0 0 0 3px var(--wine-soft)}
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:9px;border:1px solid var(--line-strong);background:#fff;color:var(--ink);font-weight:600;font-size:13px;transition:.12s}
+  .btn:hover{border-color:var(--ink)}
+  .btn.primary{background:var(--wine);border-color:var(--wine);color:#fff}
+  .btn.primary:hover{background:var(--wine-2);border-color:var(--wine-2)}
+  .btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+  .btn.ghost:hover{background:#f0ebe2;color:var(--ink)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .btn.danger{color:var(--red);border-color:var(--red-soft)}
+  .btn.danger:hover{background:var(--red-soft);border-color:var(--red)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.block{width:100%;justify-content:center}
+
+  /* ---------- Shell ---------- */
+  #app{display:none}
+  header.top{background:var(--surface);border-bottom:1px solid var(--line);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:20}
+  header.top .brand{font-family:"Fraunces",serif;font-size:19px;color:var(--wine)}
+  header.top .brand small{font-family:"Public Sans";color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-left:8px}
+  header.top .who{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:13px}
+  nav.tabs{background:var(--surface);border-bottom:1px solid var(--line);padding:0 16px;display:flex;gap:2px;overflow-x:auto;position:sticky;top:60px;z-index:19}
+  nav.tabs button{background:none;border:none;padding:14px 16px;color:var(--muted);font-weight:600;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}
+  nav.tabs button.active{color:var(--wine);border-bottom-color:var(--wine)}
+  nav.tabs button:hover{color:var(--ink)}
+  main{max-width:1180px;margin:0 auto;padding:28px 24px 80px}
+
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap}
+  .page-head h2{font-size:24px}
+  .page-head p{color:var(--muted);margin:4px 0 0;font-size:13px}
+
+  /* ---------- Cards / tables ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .card .card-h{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .card .card-h h3{font-size:16px}
+  .card-body{padding:18px}
+  .grid{display:grid;gap:18px}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--line);background:#fcfaf6;position:sticky;top:0}
+  td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .table-wrap{overflow-x:auto}
+  .muted{color:var(--muted)}
+  .right{text-align:right}
+  .nowrap{white-space:nowrap}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;font-size:11px;font-weight:700;letter-spacing:.02em}
+  .pill.green{background:var(--green-soft);color:var(--green)}
+  .pill.red{background:var(--red-soft);color:var(--red)}
+  .pill.amber{background:var(--amber-soft);color:var(--amber)}
+  .pill.gold{background:var(--gold-soft);color:var(--gold)}
+  .pill.wine{background:var(--wine-soft);color:var(--wine)}
+  .pill.grey{background:#efeae1;color:var(--muted)}
+
+  .toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px}
+  .toolbar .field{margin-bottom:0}
+  .toolbar .field input,.toolbar .field select{padding:8px 11px}
+
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+  .kpi .label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .kpi .value{font-family:"Fraunces",serif;font-size:30px;margin-top:8px;color:var(--ink)}
+  .kpi .value small{font-size:15px;color:var(--muted)}
+  .kpi.accent .value{color:var(--wine)}
+
+  /* days selector */
+  .days{display:flex;gap:6px;flex-wrap:wrap}
+  .days label{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);padding:7px 11px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+  .days label.on{background:var(--wine-soft);border-color:var(--wine);color:var(--wine)}
+  .days input{display:none}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(33,29,25,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--surface);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:560px;max-height:90vh;overflow:auto}
+  .modal .m-h{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:between;justify-content:space-between}
+  .modal .m-h h3{font-size:18px}
+  .modal .m-b{padding:22px}
+  .modal .m-f{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:560px){.row2{grid-template-columns:1fr}}
+
+  /* toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center}
+  .toast{background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:pop .2s}
+  .toast.ok{background:var(--green)} .toast.err{background:var(--red)}
+  @keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+
+  .empty{text-align:center;padding:48px 20px;color:var(--muted)}
+  .spinner{width:18px;height:18px;border:2px solid var(--line-strong);border-top-color:var(--wine);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hint{background:var(--gold-soft);border:1px solid #ecdcb8;color:#6b5118;padding:10px 14px;border-radius:9px;font-size:13px;margin-bottom:16px}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login">
+  <div class="login-card">
+    <div class="brand">Binifadet</div>
+    <div class="sub">Administración de visitas y experiencias</div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="loginEmail" autocomplete="username" placeholder="tu@bonitamenorca.com">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" id="loginPass" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn primary block" id="loginBtn" onclick="doLogin()">Entrar</button>
+    <div id="loginErr" style="color:var(--red);font-size:13px;margin-top:12px;display:none"></div>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app">
+  <header class="top">
+    <div class="brand">Binifadet <small>Visitas</small></div>
+    <div class="who"><span id="whoEmail"></span><button class="btn ghost sm" onclick="doLogout()">Salir</button></div>
+  </header>
+  <nav class="tabs">
+    <button data-tab="dashboard" onclick="go('dashboard')">Dashboard</button>
+    <button data-tab="productos" onclick="go('productos')">Productos</button>
+    <button data-tab="calendario" onclick="go('calendario')">Calendario</button>
+    <button data-tab="reservas" onclick="go('reservas')">Reservas</button>
+    <button data-tab="bonos" onclick="go('bonos')">Bonos</button>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast"></div>
+
+<script>
+/* =================================================================
+   CONFIGURACIÓN  —  Proyecto binifadet-visitas
+   ================================================================= */
+const SUPABASE_URL  = "https://faocwphdaughhziserqb.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhb2N3cGhkYXVnaGh6aXNlcnFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NTY5MjEsImV4cCI6MjA5NjQzMjkyMX0.n7oc96uH1hxiXCqDuoP0CDFmF2qlFHjJJ043geaZLSE";
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const euro = n => (Number(n)||0).toLocaleString('es-ES',{style:'currency',currency:'EUR'});
+const fDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+const fHora = h => h ? h.slice(0,5) : '';
+const todayISO = () => new Date().toISOString().slice(0,10);
+const addDaysISO = (iso,n)=>{const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function toast(msg,type=''){const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;$('#toast').appendChild(t);setTimeout(()=>t.remove(),3200);}
+function closeModal(){$('#modalRoot').innerHTML='';}
+function modal(html){$('#modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;}
+
+const IDIOMAS = {es:'Español',en:'Inglés',fr:'Francés'};
+const DIAS = [['L',1],['M',2],['X',3],['J',4],['V',5],['S',6],['D',7]];
+
+/* =================================================================
+   AUTENTICACIÓN
+   ================================================================= */
+async function doLogin(){
+  const email=$('#loginEmail').value.trim(), pass=$('#loginPass').value;
+  const btn=$('#loginBtn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const {error}=await sb.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false; btn.textContent='Entrar';
+  if(error){$('#loginErr').style.display='block';$('#loginErr').textContent='No se pudo entrar: '+error.message;return;}
+  boot();
+}
+async function doLogout(){await sb.auth.signOut();location.reload();}
+
+async function boot(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){$('#login').style.display='flex';$('#app').style.display='none';return;}
+  $('#login').style.display='none';$('#app').style.display='block';
+  $('#whoEmail').textContent=session.user.email;
+  go('dashboard');
+}
+$('#loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+/* =================================================================
+   NAVEGACIÓN
+   ================================================================= */
+let TAB='dashboard';
+function go(tab){
+  TAB=tab;
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  const v=$('#view'); v.innerHTML='<div class="empty"><span class="spinner"></span></div>';
+  ({dashboard:renderDashboard,productos:renderProductos,calendario:renderCalendario,reservas:renderReservas,bonos:renderBonos}[tab])();
+}
+
+/* =================================================================
+   PRODUCTOS
+   ================================================================= */
+async function renderProductos(){
+  const {data,error}=await sb.from('productos').select('*').order('orden').order('nombre_es');
+  if(error)return errView(error);
+  const v=$('#view');
+  v.innerHTML=`
+    <div class="page-head">
+      <div><h2>Productos</h2><p>Visitas, experiencias y bonos. Las visitas generan sesiones; los bonos no.</p></div>
+      <button class="btn primary" onclick="prodForm()">+ Nuevo producto</button>
+    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Nombre</th><th>Tipo</th><th>Idioma</th><th class="right">Precio</th><th class="right">Aforo</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${data.length?data.map(p=>`
+        <tr>
+          <td><strong>${esc(p.nombre_es)}</strong>${p.nombre_en?`<div class="muted" style="font-size:12px">${esc(p.nombre_en)}${p.nombre_fr?' · '+esc(p.nombre_fr):''}</div>`:''}</td>
+          <td>${p.tipo==='bono'?`<span class="pill gold">Bono · ${esc(p.tipo_bono||'')}</span>`:'<span class="pill wine">Visita</span>'}</td>
+          <td>${p.idioma?IDIOMAS[p.idioma]:'—'}</td>
+          <td class="right nowrap">${euro(p.precio)}</td>
+          <td class="right">${p.tipo==='bono'?'—':(p.aforo_default??'—')}</td>
+          <td>${p.activo?'<span class="pill green">Activo</span>':'<span class="pill grey">Inactivo</span>'}</td>
+          <td class="right nowrap"><button class="btn sm" onclick='prodForm(${JSON.stringify(p)})'>Editar</button></td>
+        </tr>`).join(''):`<tr><td colspan="7"><div class="empty">Aún no hay productos. Crea el primero.</div></td></tr>`}
+      </tbody>
+    </table></div></div>`;
+}
+
+function prodForm(p=null){
+  const e=p||{tipo:'visita_experiencia',idioma:'es',caducidad_meses:12,activo:true};
+  modal(`
+    <div class="m-h"><h3>${p?'Editar producto':'Nuevo producto'}</h3></div>
+    <div class="m-b">
+      <div class="field"><label>Tipo</label>
+        <select id="f_tipo" onchange="toggleBono(this.value)">
+          <option value="visita_experiencia" ${e.tipo==='visita_experiencia'?'selected':''}>Visita / experiencia</option>
+          <option value="bono" ${e.tipo==='bono'?'selected':''}>Bono regalo</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Nombre (ES)</label><input id="f_nombre_es" value="${esc(e.nombre_es||'')}"></div>
+        <div class="field"><label>Nombre (EN)</label><input id="f_nombre_en" value="${esc(e.nombre_en||'')}"></div>
+      </div>
+      <div class="field"><label>Nombre (FR)</label><input id="f_nombre_fr" value="${esc(e.nombre_fr||'')}"></div>
+      <div class="field"><label>Descripción (ES)</label><textarea id="f_desc_es" rows="2">${esc(e.descripcion_es||'')}</textarea></div>
+      <div id="bloqueVisita" style="display:${e.tipo==='bono'?'none':'block'}">
+        <div class="row2">
+          <div class="field"><label>Idioma de la visita</label>
+            <select id="f_idioma"><option value="">—</option>${Object.entries(IDIOMAS).map(([k,vv])=>`<option value="${k}" ${e.idioma===k?'selected':''}>${vv}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Duración (min)</label><input id="f_duracion" type="number" value="${e.duracion_min||''}"></div>
+        </div>
+        <div class="field"><label>Aforo por defecto</label><input id="f_aforo" type="number" value="${e.aforo_default||''}"></div>
+      </div>
+      <div id="bloqueBono" style="display:${e.tipo==='bono'?'block':'none'}">
+        <div class="row2">
+          <div class="field"><label>Tipo de bono</label>
+            <select id="f_tipobono">
+              <option value="visita" ${e.tipo_bono==='visita'?'selected':''}>Visita</option>
+              <option value="maridaje" ${e.tipo_bono==='maridaje'?'selected':''}>Menú maridaje</option>
+              <option value="importe" ${e.tipo_bono==='importe'?'selected':''}>Importe fijo</option>
+            </select>
+          </div>
+          <div class="field"><label>Caducidad (meses)</label><input id="f_caducidad" type="number" value="${e.caducidad_meses||12}"></div>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Precio (€)</label><input id="f_precio" type="number" step="0.01" value="${e.precio||''}"></div>
+        <div class="field"><label>Estado</label><select id="f_activo"><option value="true" ${e.activo!==false?'selected':''}>Activo</option><option value="false" ${e.activo===false?'selected':''}>Inactivo</option></select></div>
+      </div>
+    </div>
+    <div class="m-f">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick='prodSave(${p?`"${p.id}"`:'null'})'>Guardar</button>
+    </div>`);
+}
+function toggleBono(t){$('#bloqueBono').style.display=t==='bono'?'block':'none';$('#bloqueVisita').style.display=t==='bono'?'none':'block';}
+
+async function prodSave(id){
+  const tipo=$('#f_tipo').value;
+  const rec={
+    tipo,
+    nombre_es:$('#f_nombre_es').value.trim(),
+    nombre_en:$('#f_nombre_en').value.trim()||null,
+    nombre_fr:$('#f_nombre_fr').value.trim()||null,
+    descripcion_es:$('#f_desc_es').value.trim()||null,
+    precio:parseFloat($('#f_precio').value)||0,
+    activo:$('#f_activo').value==='true',
+    idioma:tipo==='bono'?null:($('#f_idioma').value||null),
+    duracion_min:tipo==='bono'?null:(parseInt($('#f_duracion').value)||null),
+    aforo_default:tipo==='bono'?null:(parseInt($('#f_aforo').value)||null),
+    tipo_bono:tipo==='bono'?$('#f_tipobono').value:null,
+    caducidad_meses:tipo==='bono'?(parseInt($('#f_caducidad').value)||12):null
+  };
+  if(!rec.nombre_es){toast('Pon al menos el nombre en español','err');return;}
+  const q=id?sb.from('productos').update(rec).eq('id',id):sb.from('productos').insert(rec);
+  const {error}=await q;
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast('Producto guardado','ok');renderProductos();
+}
+
+/* =================================================================
+   CALENDARIO / SESIONES
+   ================================================================= */
+let CAL_DESDE=todayISO(), CAL_HASTA=addDaysISO(todayISO(),30);
+async function renderCalendario(){
+  const v=$('#view');
+  const {data:prods}=await sb.from('productos').select('id,nombre_es,aforo_default,idioma').eq('tipo','visita_experiencia').eq('activo',true).order('nombre_es');
+  v.innerHTML=`
+    <div class="page-head">
+      <div><h2>Calendario</h2><p>Programa sesiones para toda la temporada de una vez y ajusta aforos por día.</p></div>
+      <button class="btn primary" onclick="genForm()">+ Generar sesiones</button>
+    </div>
+    <div class="toolbar">
+      <div class="field"><label>Desde</label><input type="date" id="calDesde" value="${CAL_DESDE}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="calHasta" value="${CAL_HASTA}"></div>
+      <button class="btn" onclick="loadSesiones()">Ver</button>
+    </div>
+    <div id="sesContainer" class="card"><div class="empty"><span class="spinner"></span></div></div>`;
+  window._prods=prods||[];
+  loadSesiones();
+}
+async function loadSesiones(){
+  CAL_DESDE=$('#calDesde').value; CAL_HASTA=$('#calHasta').value;
+  const cont=$('#sesContainer'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
+  const {data:ses,error}=await sb.from('sesiones').select('*, productos(nombre_es,idioma)').gte('fecha',CAL_DESDE).lte('fecha',CAL_HASTA).order('fecha').order('hora_inicio');
+  if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
+  const ids=ses.map(s=>s.id);
+  let ocup={};
+  if(ids.length){
+    const {data:rs}=await sb.from('reservas').select('sesion_id,num_personas,estado').in('sesion_id',ids);
+    (rs||[]).forEach(r=>{if(['pendiente_pago','pagada'].includes(r.estado))ocup[r.sesion_id]=(ocup[r.sesion_id]||0)+r.num_personas;});
+  }
+  if(!ses.length){cont.innerHTML='<div class="empty">No hay sesiones en ese rango. Usa "Generar sesiones".</div>';return;}
+  let lastFecha='';
+  cont.innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Producto</th><th class="right">Ocupación</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${ses.map(s=>{
+      const oc=ocup[s.id]||0; const libre=s.aforo-oc;
+      const cab=s.fecha!==lastFecha; lastFecha=s.fecha;
+      const pillOc=libre<=0?'red':(libre<=Math.max(1,s.aforo*0.2)?'amber':'green');
+      return `<tr>
+        <td class="nowrap">${cab?`<strong>${fDate(s.fecha)}</strong><div class="muted" style="font-size:11px">${['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][new Date(s.fecha+'T00:00:00').getDay()===0?7:new Date(s.fecha+'T00:00:00').getDay()]}</div>`:''}</td>
+        <td class="nowrap">${fHora(s.hora_inicio)}</td>
+        <td>${esc(s.productos?.nombre_es||'')} ${s.productos?.idioma?`<span class="muted">(${s.productos.idioma.toUpperCase()})</span>`:''}</td>
+        <td class="right nowrap"><span class="pill ${pillOc}">${oc}/${s.aforo}</span></td>
+        <td>${s.estado==='cancelada'?'<span class="pill red">Cancelada</span>':'<span class="pill green">Activa</span>'}</td>
+        <td class="right nowrap">
+          ${s.estado==='cancelada'?'':`<button class="btn sm" onclick="editAforo('${s.id}',${s.aforo},${oc})">Aforo</button>
+          <button class="btn sm danger" onclick="cancelSesion('${s.id}')">Cancelar</button>`}
+        </td>
+      </tr>`;}).join('')}</tbody></table></div>`;
+}
+
+function genForm(){
+  const prods=window._prods||[];
+  if(!prods.length){toast('Crea primero un producto de tipo visita','err');return;}
+  modal(`
+    <div class="m-h"><h3>Generar sesiones</h3></div>
+    <div class="m-b">
+      <div class="hint">Define la visita una vez y crea todas las sesiones de la temporada de golpe. Luego puedes ajustar o cancelar las que quieras.</div>
+      <div class="field"><label>Producto</label>
+        <select id="g_prod">${prods.map(p=>`<option value="${p.id}" data-aforo="${p.aforo_default||''}">${esc(p.nombre_es)}${p.idioma?' ('+p.idioma.toUpperCase()+')':''}</option>`).join('')}</select>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Desde</label><input type="date" id="g_desde" value="${todayISO()}"></div>
+        <div class="field"><label>Hasta</label><input type="date" id="g_hasta" value="${addDaysISO(todayISO(),180)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Hora</label><input type="time" id="g_hora" value="11:30"></div>
+        <div class="field"><label>Aforo (vacío = el del producto)</label><input type="number" id="g_aforo" placeholder="por defecto"></div>
+      </div>
+      <div class="field"><label>Días de la semana</label>
+        <div class="days" id="g_dias">${DIAS.map(([l,n])=>`<label class="on" onclick="this.classList.toggle('on')"><input type="checkbox" value="${n}" checked>${l}</label>`).join('')}</div>
+      </div>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="genRun()">Generar</button></div>`);
+}
+async function genRun(){
+  const dias=[...document.querySelectorAll('#g_dias label.on input')].map(i=>parseInt(i.value));
+  if(!dias.length){toast('Selecciona al menos un día','err');return;}
+  const aforoVal=$('#g_aforo').value?parseInt($('#g_aforo').value):null;
+  const {data,error}=await sb.rpc('generar_sesiones',{
+    p_producto_id:$('#g_prod').value,
+    p_fecha_desde:$('#g_desde').value,
+    p_fecha_hasta:$('#g_hasta').value,
+    p_hora:$('#g_hora').value,
+    p_dias_semana:dias,
+    p_aforo:aforoVal
+  });
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast(`${data} sesiones generadas`,'ok');loadSesiones();
+}
+function editAforo(id,aforo,oc){
+  modal(`<div class="m-h"><h3>Ajustar aforo</h3></div>
+    <div class="m-b"><p class="muted">Ocupación actual: ${oc} plazas. El nuevo aforo no puede ser menor.</p>
+      <div class="field"><label>Aforo de esta sesión</label><input type="number" id="ea" value="${aforo}" min="${oc}"></div></div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveAforo('${id}',${oc})">Guardar</button></div>`);
+}
+async function saveAforo(id,oc){
+  const nuevo=parseInt($('#ea').value);
+  if(nuevo<oc){toast('El aforo no puede ser menor que la ocupación','err');return;}
+  const {error}=await sb.from('sesiones').update({aforo:nuevo}).eq('id',id);
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast('Aforo actualizado','ok');loadSesiones();
+}
+async function cancelSesion(id){
+  if(!confirm('¿Cancelar esta sesión? Las reservas existentes no se borran, pero deja de venderse.'))return;
+  const {error}=await sb.from('sesiones').update({estado:'cancelada'}).eq('id',id);
+  if(error){toast('Error: '+error.message,'err');return;}
+  toast('Sesión cancelada','ok');loadSesiones();
+}
+
+/* =================================================================
+   RESERVAS
+   ================================================================= */
+async function renderReservas(){
+  const v=$('#view');
+  v.innerHTML=`<div class="page-head"><div><h2>Reservas</h2><p>Últimas reservas registradas. Cancelar una libera su plaza automáticamente.</p></div></div>
+    <div class="toolbar">
+      <div class="field"><label>Estado</label><select id="rEstado" onchange="loadReservas()">
+        <option value="">Todos</option><option value="pagada">Pagadas</option><option value="pendiente_pago">Pendientes de pago</option><option value="cancelada">Canceladas</option></select></div>
+    </div>
+    <div id="resContainer" class="card"><div class="empty"><span class="spinner"></span></div></div>`;
+  loadReservas();
+}
+async function loadReservas(){
+  const cont=$('#resContainer'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
+  let q=sb.from('reservas').select('*, sesiones(fecha,hora_inicio,productos(nombre_es))').order('created_at',{ascending:false}).limit(200);
+  const est=$('#rEstado').value; if(est)q=q.eq('estado',est);
+  const {data,error}=await q;
+  if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
+  if(!data.length){cont.innerHTML='<div class="empty">No hay reservas.</div>';return;}
+  cont.innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Código</th><th>Cliente</th><th>Visita</th><th>Sesión</th><th class="right">Pers.</th><th class="right">Importe</th><th>Pago</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${data.map(r=>{
+      const s=r.sesiones; const pago={stripe:'Online',agora_tpv:'Presencial (Ágora)',bono:'Bono'}[r.metodo_pago]||r.metodo_pago;
+      const estPill={pagada:'green',pendiente_pago:'amber',cancelada:'red'}[r.estado]||'grey';
+      return `<tr>
+        <td class="nowrap"><code>${esc(r.codigo_reserva)}</code></td>
+        <td>${esc(r.cliente_nombre)}<div class="muted" style="font-size:12px">${esc(r.cliente_email||'')}${r.cliente_pais?' · '+esc(r.cliente_pais):''}</div></td>
+        <td>${esc(s?.productos?.nombre_es||'—')}</td>
+        <td class="nowrap">${s?fDate(s.fecha)+' '+fHora(s.hora_inicio):'—'}</td>
+        <td class="right">${r.num_personas}</td>
+        <td class="right nowrap">${euro(r.importe_total)}</td>
+        <td>${pago}</td>
+        <td><span class="pill ${estPill}">${r.estado.replace('_',' ')}</span></td>
+        <td class="right nowrap">${r.estado!=='cancelada'?`<button class="btn sm danger" onclick="cancelReserva('${esc(r.codigo_reserva)}')">Cancelar</button>`:''}</td>
+      </tr>`;}).join('')}</tbody></table></div>`;
+}
+async function cancelReserva(codigo){
+  if(!confirm('¿Cancelar la reserva '+codigo+'? Se liberará la plaza.'))return;
+  const {error}=await sb.rpc('cancelar_reserva',{p_codigo_reserva:codigo});
+  if(error){toast('Error: '+error.message,'err');return;}
+  toast('Reserva cancelada','ok');loadReservas();
+}
+
+/* =================================================================
+   BONOS
+   ================================================================= */
+async function renderBonos(){
+  const v=$('#view');
+  const {data:bonosProd}=await sb.from('productos').select('id,nombre_es,precio,tipo_bono').eq('tipo','bono').eq('activo',true).order('nombre_es');
+  window._bonosProd=bonosProd||[];
+  v.innerHTML=`
+    <div class="page-head"><div><h2>Bonos</h2><p>Vender, validar y canjear bonos regalo.</p></div>
+      <button class="btn primary" onclick="bonoVentaForm()">+ Vender bono</button></div>
+    <div class="grid" style="grid-template-columns:1fr;margin-bottom:18px">
+      <div class="card"><div class="card-h"><h3>Validar y canjear</h3></div>
+        <div class="card-body">
+          <div class="toolbar" style="margin-bottom:0">
+            <div class="field" style="flex:1"><label>Código del bono</label><input id="bCodigo" placeholder="Ej. AB12CD34EF" style="text-transform:uppercase"></div>
+            <button class="btn" onclick="validarBono()">Validar</button>
+          </div>
+          <div id="bonoResult" style="margin-top:16px"></div>
+        </div>
+      </div>
+    </div>
+    <div id="bonosList" class="card"><div class="empty"><span class="spinner"></span></div></div>`;
+  loadBonos();
+}
+async function loadBonos(){
+  const cont=$('#bonosList'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
+  const {data,error}=await sb.from('bonos').select('*, productos(nombre_es)').order('fecha_venta',{ascending:false}).limit(200);
+  if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
+  cont.innerHTML=`<div class="card-h"><h3>Bonos emitidos</h3></div><div class="table-wrap"><table>
+    <thead><tr><th>Código</th><th>Producto</th><th>Comprador</th><th class="right">Importe</th><th>Vendido</th><th>Caduca</th><th>Estado</th></tr></thead>
+    <tbody>${data.length?data.map(b=>{
+      const est={vendido:'green',canjeado:'grey',caducado:'red'}[b.estado]||'grey';
+      return `<tr>
+        <td class="nowrap"><code>${esc(b.codigo_canje)}</code></td>
+        <td>${esc(b.productos?.nombre_es||'—')}</td>
+        <td>${esc(b.comprador_nombre)}${b.beneficiario_nombre?`<div class="muted" style="font-size:12px">Para: ${esc(b.beneficiario_nombre)}</div>`:''}</td>
+        <td class="right nowrap">${euro(b.importe)}</td>
+        <td class="nowrap">${fDate((b.fecha_venta||'').slice(0,10))}</td>
+        <td class="nowrap">${b.caduca_at?fDate(b.caduca_at.slice(0,10)):'—'}</td>
+        <td><span class="pill ${est}">${b.estado}</span>${b.estado==='canjeado'&&b.fecha_canje?`<div class="muted" style="font-size:11px">${fDate(b.fecha_canje.slice(0,10))}</div>`:''}</td>
+      </tr>`;}).join(''):'<tr><td colspan="7"><div class="empty">Aún no hay bonos.</div></td></tr>'}</tbody></table></div>`;
+}
+async function validarBono(){
+  const cod=$('#bCodigo').value.trim().toUpperCase();
+  if(!cod){toast('Introduce un código','err');return;}
+  const box=$('#bonoResult'); box.innerHTML='<span class="spinner"></span>';
+  const {data,error}=await sb.rpc('validar_bono',{p_codigo_canje:cod});
+  if(error){box.innerHTML=`<div class="hint" style="background:var(--red-soft);border-color:#f3c9c6;color:var(--red)">Error: ${esc(error.message)}</div>`;return;}
+  const r=Array.isArray(data)?data[0]:data;
+  if(!r){box.innerHTML='<div class="empty">Sin respuesta</div>';return;}
+  if(!r.valido){
+    box.innerHTML=`<div class="hint" style="background:var(--red-soft);border-color:#f3c9c6;color:var(--red)">❌ ${esc(r.motivo)}</div>`;return;
+  }
+  // válido -> mostrar canje
+  box.innerHTML=`
+    <div class="hint" style="background:var(--green-soft);border-color:#bfe0cb;color:var(--green)">✅ Bono válido · ${esc(r.concepto||'')} · ${euro(r.importe)} · caduca ${r.caduca_at?fDate(r.caduca_at.slice(0,10)):'—'}</div>
+    <div class="row2">
+      <div class="field"><label>Fecha de la visita</label><input type="date" id="cz_fecha" value="${todayISO()}" onchange="loadSesionesCanje()"></div>
+      <div class="field"><label>Nº de personas</label><input type="number" id="cz_pers" value="1" min="1"></div>
+    </div>
+    <div class="field"><label>Sesión</label><select id="cz_sesion"><option>Cargando…</option></select></div>
+    <div class="field"><label>Nombre (opcional)</label><input id="cz_nombre" placeholder="Beneficiario del bono"></div>
+    <button class="btn primary" onclick="canjearBono('${esc(cod)}')">Canjear bono</button>`;
+  loadSesionesCanje();
+}
+async function loadSesionesCanje(){
+  const fecha=$('#cz_fecha').value; const sel=$('#cz_sesion');
+  sel.innerHTML='<option>Cargando…</option>';
+  const {data}=await sb.from('sesiones').select('*, productos(nombre_es,idioma)').eq('fecha',fecha).eq('estado','activa').order('hora_inicio');
+  if(!data||!data.length){sel.innerHTML='<option value="">— No hay sesiones activas ese día —</option>';return;}
+  sel.innerHTML=data.map(s=>`<option value="${s.id}">${fHora(s.hora_inicio)} · ${esc(s.productos?.nombre_es||'')}${s.productos?.idioma?' ('+s.productos.idioma.toUpperCase()+')':''}</option>`).join('');
+}
+async function canjearBono(cod){
+  const sesion=$('#cz_sesion').value;
+  if(!sesion){toast('Selecciona una sesión válida','err');return;}
+  const {error}=await sb.rpc('canjear_bono',{
+    p_codigo_canje:cod,
+    p_sesion_id:sesion,
+    p_num_personas:parseInt($('#cz_pers').value)||1,
+    p_nombre:$('#cz_nombre').value.trim()||null
+  });
+  if(error){toast('Error: '+error.message,'err');return;}
+  toast('Bono canjeado y reserva creada','ok');
+  $('#bonoResult').innerHTML='';$('#bCodigo').value='';
+  loadBonos();
+}
+function bonoVentaForm(){
+  const prods=window._bonosProd||[];
+  if(!prods.length){toast('Crea primero un producto de tipo bono','err');return;}
+  modal(`
+    <div class="m-h"><h3>Vender bono</h3></div>
+    <div class="m-b">
+      <div class="hint">Registra un bono vendido en recepción. El online vendrá con la pasarela de pago.</div>
+      <div class="field"><label>Producto (bono)</label>
+        <select id="bv_prod" onchange="bvPrecio()">${prods.map(p=>`<option value="${p.id}" data-precio="${p.precio}">${esc(p.nombre_es)} · ${euro(p.precio)}</option>`).join('')}</select></div>
+      <div class="row2">
+        <div class="field"><label>Comprador</label><input id="bv_comprador"></div>
+        <div class="field"><label>Email comprador</label><input id="bv_email" type="email"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Beneficiario (opcional)</label><input id="bv_benef"></div>
+        <div class="field"><label>Importe (€)</label><input id="bv_importe" type="number" step="0.01"></div>
+      </div>
+      <div class="field"><label>Caducidad (opcional, vacío = automática)</label><input id="bv_caduca" type="date"></div>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="bonoVentaSave()">Emitir bono</button></div>`);
+  bvPrecio();
+}
+function bvPrecio(){const o=$('#bv_prod').selectedOptions[0];$('#bv_importe').value=o?o.dataset.precio:'';}
+async function bonoVentaSave(){
+  const rec={
+    producto_id:$('#bv_prod').value,
+    comprador_nombre:$('#bv_comprador').value.trim(),
+    comprador_email:$('#bv_email').value.trim(),
+    beneficiario_nombre:$('#bv_benef').value.trim()||null,
+    importe:parseFloat($('#bv_importe').value)||0
+  };
+  if($('#bv_caduca').value)rec.caduca_at=$('#bv_caduca').value+'T23:59:59';
+  if(!rec.comprador_nombre||!rec.comprador_email){toast('Falta comprador o email','err');return;}
+  const {error}=await sb.from('bonos').insert(rec);
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast('Bono emitido','ok');loadBonos();
+}
+
+/* =================================================================
+   DASHBOARD
+   ================================================================= */
+let DASH_DESDE, DASH_HASTA;
+async function renderDashboard(){
+  const v=$('#view');
+  const now=new Date();
+  DASH_DESDE=DASH_DESDE||new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+  DASH_HASTA=DASH_HASTA||todayISO();
+  v.innerHTML=`
+    <div class="page-head"><div><h2>Dashboard</h2><p>Resumen de ventas y visitas. Ingresos por fecha de venta; visitas por fecha de realización.</p></div>
+      <button class="btn" onclick="exportExcel()">↓ Exportar a Excel</button></div>
+    <div class="toolbar">
+      <div class="field"><label>Desde</label><input type="date" id="dDesde" value="${DASH_DESDE}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="dHasta" value="${DASH_HASTA}"></div>
+      <button class="btn" onclick="loadDashboard()">Aplicar</button>
+    </div>
+    <div id="dashKpis" class="kpis"></div>
+    <div id="dashBreak" class="card"></div>`;
+  loadDashboard();
+}
+async function loadDashboard(){
+  DASH_DESDE=$('#dDesde').value; DASH_HASTA=$('#dHasta').value;
+  $('#dashKpis').innerHTML='<div class="empty" style="grid-column:1/-1"><span class="spinner"></span></div>';
+  // Reservas pagadas con su sesión + bonos
+  const {data:res}=await sb.from('reservas').select('importe_total,num_personas,metodo_pago,created_at, sesiones(fecha,productos(nombre_es))').eq('estado','pagada');
+  const {data:bon}=await sb.from('bonos').select('importe,estado,fecha_venta');
+  const inRange=(iso)=>iso>=DASH_DESDE&&iso<=DASH_HASTA;
+
+  let ingresos=0, visitas=0, nReservas=0;
+  const porProducto={};
+  (res||[]).forEach(r=>{
+    const fv=(r.created_at||'').slice(0,10);
+    const fr=r.sesiones?.fecha;
+    // ingreso: por fecha de venta, salvo pagadas con bono (ya contadas en la venta del bono)
+    if(inRange(fv)&&r.metodo_pago!=='bono')ingresos+=Number(r.importe_total||0);
+    // visita: por fecha de realización (todas las reservas, incluidas presenciales)
+    if(fr&&inRange(fr)){visitas+=r.num_personas;nReservas++;
+      const k=r.sesiones?.productos?.nombre_es||'—';porProducto[k]=(porProducto[k]||0)+r.num_personas;}
+  });
+  let bonosVendidos=0,bonosImporte=0,bonosPend=0;
+  (bon||[]).forEach(b=>{
+    const fv=(b.fecha_venta||'').slice(0,10);
+    if(inRange(fv)&&['vendido','canjeado'].includes(b.estado)){bonosVendidos++;bonosImporte+=Number(b.importe||0);ingresos+=Number(b.importe||0);}
+    if(b.estado==='vendido')bonosPend++;
+  });
+
+  $('#dashKpis').innerHTML=`
+    <div class="kpi accent"><div class="label">Ingresos</div><div class="value">${euro(ingresos)}</div></div>
+    <div class="kpi"><div class="label">Visitas realizadas</div><div class="value">${visitas} <small>pers.</small></div></div>
+    <div class="kpi"><div class="label">Reservas</div><div class="value">${nReservas}</div></div>
+    <div class="kpi"><div class="label">Bonos vendidos</div><div class="value">${bonosVendidos} <small>· ${euro(bonosImporte)}</small></div></div>
+    <div class="kpi"><div class="label">Bonos sin canjear</div><div class="value">${bonosPend}</div></div>`;
+
+  const prodRows=Object.entries(porProducto).sort((a,b)=>b[1]-a[1]);
+  $('#dashBreak').innerHTML=`<div class="card-h"><h3>Visitas por producto</h3></div><div class="table-wrap"><table>
+    <thead><tr><th>Producto</th><th class="right">Personas</th></tr></thead>
+    <tbody>${prodRows.length?prodRows.map(([k,vv])=>`<tr><td>${esc(k)}</td><td class="right">${vv}</td></tr>`).join(''):'<tr><td colspan="2"><div class="empty">Sin visitas en el rango.</div></td></tr>'}</tbody></table></div>`;
+}
+async function exportExcel(){
+  toast('Generando Excel…');
+  const {data:res}=await sb.from('reservas').select('codigo_reserva,cliente_nombre,cliente_email,cliente_pais,num_personas,importe_total,metodo_pago,estado,created_at, sesiones(fecha,hora_inicio,productos(nombre_es))').order('created_at',{ascending:false});
+  const {data:bon}=await sb.from('bonos').select('codigo_canje,comprador_nombre,comprador_email,importe,estado,fecha_venta,fecha_canje, productos(nombre_es)').order('fecha_venta',{ascending:false});
+  const inRange=(iso)=>iso&&iso>=DASH_DESDE&&iso<=DASH_HASTA;
+  const filasR=(res||[]).filter(r=>inRange((r.created_at||'').slice(0,10))).map(r=>({
+    Origen:'Reserva',Codigo:r.codigo_reserva,Producto:r.sesiones?.productos?.nombre_es||'',
+    'Fecha venta':(r.created_at||'').slice(0,10),'Fecha visita':r.sesiones?.fecha||'',Hora:fHora(r.sesiones?.hora_inicio||''),
+    Cliente:r.cliente_nombre,Email:r.cliente_email,Pais:r.cliente_pais||'',Personas:r.num_personas,
+    Importe:Number(r.importe_total||0),Pago:r.metodo_pago,Estado:r.estado
+  }));
+  const filasB=(bon||[]).filter(b=>inRange((b.fecha_venta||'').slice(0,10))).map(b=>({
+    Origen:'Bono',Codigo:b.codigo_canje,Producto:b.productos?.nombre_es||'',
+    'Fecha venta':(b.fecha_venta||'').slice(0,10),'Fecha visita':(b.fecha_canje||'').slice(0,10),Hora:'',
+    Cliente:b.comprador_nombre,Email:b.comprador_email,Pais:'',Personas:1,
+    Importe:Number(b.importe||0),Pago:'bono_venta',Estado:b.estado
+  }));
+  const filas=[...filasR,...filasB];
+  if(!filas.length){toast('No hay datos en el rango','err');return;}
+  const ws=XLSX.utils.json_to_sheet(filas);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Ventas');
+  XLSX.writeFile(wb,`ventas_binifadet_${DASH_DESDE}_${DASH_HASTA}.xlsx`);
+  toast('Excel descargado','ok');
+}
+
+/* =================================================================
+   ERRORES / ARRANQUE
+   ================================================================= */
+function errView(error){$('#view').innerHTML=`<div class="card"><div class="card-body"><div class="empty">Error cargando datos:<br>${esc(error.message)}</div></div></div>`;}
+sb.auth.onAuthStateChange((_e,session)=>{ if(!session){$('#login').style.display='flex';$('#app').style.display='none';} });
+boot();
+</script>
+</body>
+</html>

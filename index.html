@@ -479,13 +479,13 @@ function genForm(){
         <div class="field"><label>Aforo (vacío = el del producto)</label><input type="number" id="g_aforo" placeholder="por defecto"></div>
       </div>
       <div class="field"><label>Días de la semana</label>
-        <div class="days" id="g_dias">${DIAS.map(([l,n])=>`<label class="on" onclick="this.classList.toggle('on')"><input type="checkbox" value="${n}" checked>${l}</label>`).join('')}</div>
+        <div class="days" id="g_dias">${DIAS.map(([l,n])=>`<label class="on"><input type="checkbox" value="${n}" checked onchange="this.closest('label').classList.toggle('on',this.checked)">${l}</label>`).join('')}</div>
       </div>
     </div>
     <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="genRun()">Generar</button></div>`);
 }
 async function genRun(){
-  const dias=[...document.querySelectorAll('#g_dias label.on input')].map(i=>parseInt(i.value));
+  const dias=[...document.querySelectorAll('#g_dias input:checked')].map(i=>parseInt(i.value));
   if(!dias.length){toast('Selecciona al menos un día','err');return;}
   const aforoVal=$('#g_aforo').value?parseInt($('#g_aforo').value):null;
   const {data,error}=await sb.rpc('generar_sesiones',{

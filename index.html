@@ -194,6 +194,35 @@ function modal(html){$('#modalRoot').innerHTML=`<div class="overlay" onclick="if
 const IDIOMAS = {es:'Español',en:'Inglés',fr:'Francés'};
 const DIAS = [['L',1],['M',2],['X',3],['J',4],['V',5],['S',6],['D',7]];
 
+/* ---------- ordenación de tablas (clic en la cabecera) ----------
+   Usa el atributo data-sort de cada celda si existe (valor real para ordenar),
+   y si no, el texto visible. Las cabeceras con data-nosort no ordenan. */
+function cellVal(td){
+  let v = td.dataset.sort!==undefined ? td.dataset.sort : td.textContent.trim();
+  const n = parseFloat(v);
+  return (v!=='' && !isNaN(n) && /^-?[\d.]+$/.test(v)) ? n : v.toLowerCase();
+}
+function enableSort(table){
+  if(!table||!table.tHead)return;
+  const ths=[...table.tHead.rows[0].cells];
+  ths.forEach((th,idx)=>{
+    if(th.dataset.nosort!==undefined)return;
+    th.style.cursor='pointer';
+    th.title='Ordenar';
+    th.onclick=()=>{
+      const dir=th.dataset.dir==='asc'?'desc':'asc';
+      ths.forEach(t=>{t.dataset.dir='';const a=t.querySelector('.arr');if(a)a.remove();});
+      th.dataset.dir=dir;
+      const arr=document.createElement('span');arr.className='arr';arr.style.opacity='.6';arr.style.fontSize='10px';arr.textContent=dir==='asc'?' ▲':' ▼';th.appendChild(arr);
+      const tb=table.tBodies[0];
+      const rows=[...tb.rows].filter(r=>r.cells.length===ths.length);
+      rows.sort((a,b)=>{const av=cellVal(a.cells[idx]),bv=cellVal(b.cells[idx]);if(av<bv)return dir==='asc'?-1:1;if(av>bv)return dir==='asc'?1:-1;return 0;});
+      rows.forEach(r=>tb.appendChild(r));
+    };
+  });
+}
+function enableSortAll(){document.querySelectorAll('#view table').forEach(enableSort);}
+
 /* =================================================================
    AUTENTICACIÓN
    ================================================================= */
@@ -244,15 +273,16 @@ async function renderProductos(){
       <tbody>${data.length?data.map(p=>`
         <tr>
           <td><strong>${esc(p.nombre_es)}</strong>${p.nombre_en?`<div class="muted" style="font-size:12px">${esc(p.nombre_en)}${p.nombre_fr?' · '+esc(p.nombre_fr):''}</div>`:''}</td>
-          <td>${p.tipo==='bono'?`<span class="pill gold">Bono · ${esc(p.tipo_bono||'')}</span>`:'<span class="pill wine">Visita</span>'}</td>
+          <td data-sort="${p.tipo}">${p.tipo==='bono'?`<span class="pill gold">Bono · ${esc(p.tipo_bono||'')}</span>`:'<span class="pill wine">Visita</span>'}</td>
           <td>${p.idioma?IDIOMAS[p.idioma]:'—'}</td>
-          <td class="right nowrap">${euro(p.precio)}</td>
-          <td class="right">${p.tipo==='bono'?'—':(p.aforo_default??'—')}</td>
-          <td>${p.activo?'<span class="pill green">Activo</span>':'<span class="pill grey">Inactivo</span>'}</td>
+          <td class="right nowrap" data-sort="${p.precio}">${euro(p.precio)}</td>
+          <td class="right" data-sort="${p.aforo_default??-1}">${p.tipo==='bono'?'—':(p.aforo_default??'—')}</td>
+          <td data-sort="${p.activo?1:0}">${p.activo?'<span class="pill green">Activo</span>':'<span class="pill grey">Inactivo</span>'}</td>
           <td class="right nowrap"><button class="btn sm" onclick='prodForm(${JSON.stringify(p)})'>Editar</button></td>
         </tr>`).join(''):`<tr><td colspan="7"><div class="empty">Aún no hay productos. Crea el primero.</div></td></tr>`}
       </tbody>
     </table></div></div>`;
+  enableSortAll();
 }
 
 function prodForm(p=null){
@@ -352,7 +382,7 @@ async function renderCalendario(){
 async function loadSesiones(){
   CAL_DESDE=$('#calDesde').value; CAL_HASTA=$('#calHasta').value;
   const cont=$('#sesContainer'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
-  const {data:ses,error}=await sb.from('sesiones').select('*, productos(nombre_es,idioma)').gte('fecha',CAL_DESDE).lte('fecha',CAL_HASTA).order('fecha').order('hora_inicio');
+  const {data:ses,error}=await sb.from('sesiones').select('*, productos(nombre_es,idioma,precio)').gte('fecha',CAL_DESDE).lte('fecha',CAL_HASTA).order('fecha').order('hora_inicio');
   if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
   const ids=ses.map(s=>s.id);
   let ocup={};
@@ -361,24 +391,73 @@ async function loadSesiones(){
     (rs||[]).forEach(r=>{if(['pendiente_pago','pagada'].includes(r.estado))ocup[r.sesion_id]=(ocup[r.sesion_id]||0)+r.num_personas;});
   }
   if(!ses.length){cont.innerHTML='<div class="empty">No hay sesiones en ese rango. Usa "Generar sesiones".</div>';return;}
-  let lastFecha='';
+  const dias=['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  window._ses={}; // mapa para "Añadir reserva"
   cont.innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Fecha</th><th>Hora</th><th>Producto</th><th class="right">Ocupación</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Día</th><th>Hora</th><th>Producto</th><th class="right">Ocupación</th><th>Estado</th><th data-nosort></th></tr></thead>
     <tbody>${ses.map(s=>{
       const oc=ocup[s.id]||0; const libre=s.aforo-oc;
-      const cab=s.fecha!==lastFecha; lastFecha=s.fecha;
       const pillOc=libre<=0?'red':(libre<=Math.max(1,s.aforo*0.2)?'amber':'green');
+      const dow=new Date(s.fecha+'T00:00:00').getDay(); const dn=dias[dow===0?7:dow];
+      window._ses[s.id]={nombre:s.productos?.nombre_es||'',precio:s.productos?.precio||0,fecha:s.fecha,hora:fHora(s.hora_inicio),libre,oc,aforo:s.aforo};
       return `<tr>
-        <td class="nowrap">${cab?`<strong>${fDate(s.fecha)}</strong><div class="muted" style="font-size:11px">${['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][new Date(s.fecha+'T00:00:00').getDay()===0?7:new Date(s.fecha+'T00:00:00').getDay()]}</div>`:''}</td>
-        <td class="nowrap">${fHora(s.hora_inicio)}</td>
+        <td class="nowrap" data-sort="${s.fecha}"><strong>${fDate(s.fecha)}</strong></td>
+        <td class="nowrap" data-sort="${dow===0?7:dow}">${dn}</td>
+        <td class="nowrap" data-sort="${s.hora_inicio}">${fHora(s.hora_inicio)}</td>
         <td>${esc(s.productos?.nombre_es||'')} ${s.productos?.idioma?`<span class="muted">(${s.productos.idioma.toUpperCase()})</span>`:''}</td>
-        <td class="right nowrap"><span class="pill ${pillOc}">${oc}/${s.aforo}</span></td>
-        <td>${s.estado==='cancelada'?'<span class="pill red">Cancelada</span>':'<span class="pill green">Activa</span>'}</td>
+        <td class="right nowrap" data-sort="${oc}"><span class="pill ${pillOc}">${oc}/${s.aforo}</span></td>
+        <td data-sort="${s.estado}">${s.estado==='cancelada'?'<span class="pill red">Cancelada</span>':'<span class="pill green">Activa</span>'}</td>
         <td class="right nowrap">
-          ${s.estado==='cancelada'?'':`<button class="btn sm" onclick="editAforo('${s.id}',${s.aforo},${oc})">Aforo</button>
+          ${s.estado==='cancelada'?'':`<button class="btn sm primary" onclick="addReservaForm('${s.id}')">+ Reserva</button>
+          <button class="btn sm" onclick="editAforo('${s.id}',${s.aforo},${oc})">Aforo</button>
           <button class="btn sm danger" onclick="cancelSesion('${s.id}')">Cancelar</button>`}
         </td>
       </tr>`;}).join('')}</tbody></table></div>`;
+  enableSortAll();
+}
+
+/* --- Añadir reserva presencial (se cobra en Ágora, ocupa plaza, no genera ticket) --- */
+function addReservaForm(sesionId){
+  const s=(window._ses||{})[sesionId]; if(!s)return;
+  modal(`
+    <div class="m-h"><h3>Añadir reserva</h3></div>
+    <div class="m-b">
+      <div class="hint">Reserva presencial: se cobra en el TPV de Ágora. Aquí solo la damos de alta para que ocupe plaza y cuente en los informes. No genera ticket (ya es nativo en Ágora).</div>
+      <p class="muted" style="margin-top:0">${esc(s.nombre)} · ${fDate(s.fecha)} ${s.hora} · ${s.libre} plazas libres</p>
+      <div class="row2">
+        <div class="field"><label>Nombre del cliente</label><input id="ar_nombre" placeholder="Opcional"></div>
+        <div class="field"><label>Nº de personas</label><input id="ar_pers" type="number" value="1" min="1" max="${s.libre}" onchange="arImporte()"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>País (opcional)</label><input id="ar_pais"></div>
+        <div class="field"><label>Email (opcional)</label><input id="ar_email" type="email"></div>
+      </div>
+      <p class="muted">Importe estimado: <strong id="ar_importe">${euro(s.precio)}</strong> <span style="font-size:12px">(${euro(s.precio)}/persona)</span></p>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="addReservaSave('${sesionId}')">Añadir reserva</button></div>`);
+  window._arPrecio=s.precio;
+}
+function arImporte(){const n=parseInt($('#ar_pers').value)||1;$('#ar_importe').textContent=euro(n*(window._arPrecio||0));}
+async function addReservaSave(sesionId){
+  const personas=parseInt($('#ar_pers').value)||1;
+  const importe=personas*(window._arPrecio||0);
+  // 1. crear reserva (control de aforo seguro) marcada como pago presencial Ágora
+  const {data,error}=await sb.rpc('crear_reserva',{
+    p_sesion_id:sesionId,
+    p_cliente_nombre:$('#ar_nombre').value.trim()||'Reserva mostrador',
+    p_cliente_email:$('#ar_email').value.trim()||'',
+    p_cliente_telefono:null,
+    p_cliente_pais:$('#ar_pais').value.trim()||null,
+    p_idioma_preferido:null,
+    p_num_personas:personas,
+    p_importe_total:importe,
+    p_metodo_pago:'agora_tpv'
+  });
+  if(error){toast('Error: '+error.message,'err');return;}
+  // 2. marcarla como pagada (cobrada en Ágora)
+  const r=Array.isArray(data)?data[0]:data;
+  if(r&&r.id){await sb.from('reservas').update({estado:'pagada'}).eq('id',r.id);}
+  closeModal();toast('Reserva añadida','ok');loadSesiones();
 }
 
 function genForm(){
@@ -461,7 +540,7 @@ async function loadReservas(){
   if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
   if(!data.length){cont.innerHTML='<div class="empty">No hay reservas.</div>';return;}
   cont.innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Código</th><th>Cliente</th><th>Visita</th><th>Sesión</th><th class="right">Pers.</th><th class="right">Importe</th><th>Pago</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Código</th><th>Cliente</th><th>Visita</th><th>Sesión</th><th class="right">Pers.</th><th class="right">Importe</th><th>Pago</th><th>Estado</th><th data-nosort></th></tr></thead>
     <tbody>${data.map(r=>{
       const s=r.sesiones; const pago={stripe:'Online',agora_tpv:'Presencial (Ágora)',bono:'Bono'}[r.metodo_pago]||r.metodo_pago;
       const estPill={pagada:'green',pendiente_pago:'amber',cancelada:'red'}[r.estado]||'grey';
@@ -469,13 +548,14 @@ async function loadReservas(){
         <td class="nowrap"><code>${esc(r.codigo_reserva)}</code></td>
         <td>${esc(r.cliente_nombre)}<div class="muted" style="font-size:12px">${esc(r.cliente_email||'')}${r.cliente_pais?' · '+esc(r.cliente_pais):''}</div></td>
         <td>${esc(s?.productos?.nombre_es||'—')}</td>
-        <td class="nowrap">${s?fDate(s.fecha)+' '+fHora(s.hora_inicio):'—'}</td>
-        <td class="right">${r.num_personas}</td>
-        <td class="right nowrap">${euro(r.importe_total)}</td>
-        <td>${pago}</td>
-        <td><span class="pill ${estPill}">${r.estado.replace('_',' ')}</span></td>
+        <td class="nowrap" data-sort="${s?s.fecha+'T'+s.hora_inicio:''}">${s?fDate(s.fecha)+' '+fHora(s.hora_inicio):'—'}</td>
+        <td class="right" data-sort="${r.num_personas}">${r.num_personas}</td>
+        <td class="right nowrap" data-sort="${r.importe_total}">${euro(r.importe_total)}</td>
+        <td data-sort="${r.metodo_pago}">${pago}</td>
+        <td data-sort="${r.estado}"><span class="pill ${estPill}">${r.estado.replace('_',' ')}</span></td>
         <td class="right nowrap">${r.estado!=='cancelada'?`<button class="btn sm danger" onclick="cancelReserva('${esc(r.codigo_reserva)}')">Cancelar</button>`:''}</td>
       </tr>`;}).join('')}</tbody></table></div>`;
+  enableSortAll();
 }
 async function cancelReserva(codigo){
   if(!confirm('¿Cancelar la reserva '+codigo+'? Se liberará la plaza.'))return;
@@ -520,11 +600,12 @@ async function loadBonos(){
         <td class="nowrap"><code>${esc(b.codigo_canje)}</code></td>
         <td>${esc(b.productos?.nombre_es||'—')}</td>
         <td>${esc(b.comprador_nombre)}${b.beneficiario_nombre?`<div class="muted" style="font-size:12px">Para: ${esc(b.beneficiario_nombre)}</div>`:''}</td>
-        <td class="right nowrap">${euro(b.importe)}</td>
-        <td class="nowrap">${fDate((b.fecha_venta||'').slice(0,10))}</td>
-        <td class="nowrap">${b.caduca_at?fDate(b.caduca_at.slice(0,10)):'—'}</td>
-        <td><span class="pill ${est}">${b.estado}</span>${b.estado==='canjeado'&&b.fecha_canje?`<div class="muted" style="font-size:11px">${fDate(b.fecha_canje.slice(0,10))}</div>`:''}</td>
+        <td class="right nowrap" data-sort="${b.importe}">${euro(b.importe)}</td>
+        <td class="nowrap" data-sort="${(b.fecha_venta||'').slice(0,10)}">${fDate((b.fecha_venta||'').slice(0,10))}</td>
+        <td class="nowrap" data-sort="${b.caduca_at?b.caduca_at.slice(0,10):''}">${b.caduca_at?fDate(b.caduca_at.slice(0,10)):'—'}</td>
+        <td data-sort="${b.estado}"><span class="pill ${est}">${b.estado}</span>${b.estado==='canjeado'&&b.fecha_canje?`<div class="muted" style="font-size:11px">${fDate(b.fecha_canje.slice(0,10))}</div>`:''}</td>
       </tr>`;}).join(''):'<tr><td colspan="7"><div class="empty">Aún no hay bonos.</div></td></tr>'}</tbody></table></div>`;
+  enableSortAll();
 }
 async function validarBono(){
   const cod=$('#bCodigo').value.trim().toUpperCase();
@@ -665,7 +746,8 @@ async function loadDashboard(){
   const prodRows=Object.entries(porProducto).sort((a,b)=>b[1]-a[1]);
   $('#dashBreak').innerHTML=`<div class="card-h"><h3>Visitas por producto</h3></div><div class="table-wrap"><table>
     <thead><tr><th>Producto</th><th class="right">Personas</th></tr></thead>
-    <tbody>${prodRows.length?prodRows.map(([k,vv])=>`<tr><td>${esc(k)}</td><td class="right">${vv}</td></tr>`).join(''):'<tr><td colspan="2"><div class="empty">Sin visitas en el rango.</div></td></tr>'}</tbody></table></div>`;
+    <tbody>${prodRows.length?prodRows.map(([k,vv])=>`<tr><td>${esc(k)}</td><td class="right" data-sort="${vv}">${vv}</td></tr>`).join(''):'<tr><td colspan="2"><div class="empty">Sin visitas en el rango.</div></td></tr>'}</tbody></table></div>`;
+  enableSortAll();
 }
 async function exportExcel(){
   toast('Generando Excel…');
@@ -673,22 +755,21 @@ async function exportExcel(){
   const {data:bon}=await sb.from('bonos').select('codigo_canje,comprador_nombre,comprador_email,importe,estado,fecha_venta,fecha_canje, productos(nombre_es)').order('fecha_venta',{ascending:false});
   const inRange=(iso)=>iso&&iso>=DASH_DESDE&&iso<=DASH_HASTA;
   const filasR=(res||[]).filter(r=>inRange((r.created_at||'').slice(0,10))).map(r=>({
-    Origen:'Reserva',Codigo:r.codigo_reserva,Producto:r.sesiones?.productos?.nombre_es||'',
+    Codigo:r.codigo_reserva,Producto:r.sesiones?.productos?.nombre_es||'',
     'Fecha venta':(r.created_at||'').slice(0,10),'Fecha visita':r.sesiones?.fecha||'',Hora:fHora(r.sesiones?.hora_inicio||''),
     Cliente:r.cliente_nombre,Email:r.cliente_email,Pais:r.cliente_pais||'',Personas:r.num_personas,
     Importe:Number(r.importe_total||0),Pago:r.metodo_pago,Estado:r.estado
   }));
   const filasB=(bon||[]).filter(b=>inRange((b.fecha_venta||'').slice(0,10))).map(b=>({
-    Origen:'Bono',Codigo:b.codigo_canje,Producto:b.productos?.nombre_es||'',
-    'Fecha venta':(b.fecha_venta||'').slice(0,10),'Fecha visita':(b.fecha_canje||'').slice(0,10),Hora:'',
-    Cliente:b.comprador_nombre,Email:b.comprador_email,Pais:'',Personas:1,
-    Importe:Number(b.importe||0),Pago:'bono_venta',Estado:b.estado
+    Codigo:b.codigo_canje,Producto:b.productos?.nombre_es||'',
+    Comprador:b.comprador_nombre,Email:b.comprador_email,
+    Importe:Number(b.importe||0),
+    'Fecha venta':(b.fecha_venta||'').slice(0,10),'Fecha canje':(b.fecha_canje||'').slice(0,10),Estado:b.estado
   }));
-  const filas=[...filasR,...filasB];
-  if(!filas.length){toast('No hay datos en el rango','err');return;}
-  const ws=XLSX.utils.json_to_sheet(filas);
+  if(!filasR.length&&!filasB.length){toast('No hay datos en el rango','err');return;}
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Ventas');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(filasR.length?filasR:[{Aviso:'Sin visitas en el rango'}]),'Visitas');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(filasB.length?filasB:[{Aviso:'Sin bonos en el rango'}]),'Bonos');
   XLSX.writeFile(wb,`ventas_binifadet_${DASH_DESDE}_${DASH_HASTA}.xlsx`);
   toast('Excel descargado','ok');
 }

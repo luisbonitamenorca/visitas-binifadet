@@ -128,6 +128,45 @@
   .spinner{width:18px;height:18px;border:2px solid var(--line-strong);border-top-color:var(--wine);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
   @keyframes spin{to{transform:rotate(360deg)}}
   .hint{background:var(--gold-soft);border:1px solid #ecdcb8;color:#6b5118;padding:10px 14px;border-radius:9px;font-size:13px;margin-bottom:16px}
+
+  /* selector de vista (segmented) */
+  .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:9px;overflow:hidden;background:#fff}
+  .seg button{background:none;border:none;padding:8px 16px;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--wine);color:#fff}
+
+  /* navegación mes/semana */
+  .calnav{display:flex;align-items:center;gap:14px}
+  .calnav .lbl{font-family:"Fraunces",serif;font-size:18px;text-transform:capitalize;min-width:180px;text-align:center}
+  .calnav button{background:#fff;border:1px solid var(--line-strong);border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer;color:var(--ink)}
+  .calnav button:hover{border-color:var(--ink)}
+
+  /* vista MES */
+  .mes{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .mes .dow{background:#fcfaf6;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;padding:9px 0}
+  .mes .cell{background:#fff;min-height:96px;padding:6px 6px 8px;display:flex;flex-direction:column;gap:3px}
+  .mes .cell.out{background:#fafaf7}
+  .mes .cell .dn{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .mes .cell.today .dn{color:var(--wine)}
+  .mes .cell.today{box-shadow:inset 0 0 0 2px var(--gold-soft)}
+  .ses-chip{font-size:11px;line-height:1.25;padding:3px 6px;border-radius:5px;cursor:pointer;border:1px solid transparent;text-align:left;width:100%;display:block}
+  .ses-chip:hover{border-color:var(--ink)}
+  .ses-chip.green{background:var(--green-soft);color:#1c5733}
+  .ses-chip.amber{background:var(--amber-soft);color:var(--amber)}
+  .ses-chip.red{background:var(--red-soft);color:var(--red)}
+  .ses-chip.grey{background:#efeae1;color:var(--muted);text-decoration:line-through}
+  .ses-chip b{font-weight:700}
+
+  /* vista SEMANA */
+  .sem{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+  .sem .col{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:120px}
+  .sem .col-h{background:#fcfaf6;padding:8px;text-align:center;border-bottom:1px solid var(--line)}
+  .sem .col-h .d{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+  .sem .col-h .n{font-family:"Fraunces",serif;font-size:18px}
+  .sem .col-h.today .n{color:var(--wine)}
+  .sem .col-b{padding:7px;display:flex;flex-direction:column;gap:5px}
+  @media(max-width:900px){.sem{grid-template-columns:1fr;}.sem .col{min-height:auto}}
+  @media(max-width:680px){.mes .cell{min-height:64px}.mes .ses-chip{font-size:10px}}
 </style>
 </head>
 <body>
@@ -361,28 +400,62 @@ async function prodSave(id){
 /* =================================================================
    CALENDARIO / SESIONES
    ================================================================= */
-let CAL_DESDE=todayISO(), CAL_HASTA=addDaysISO(todayISO(),30);
+let CAL={mode:'lista', desde:todayISO(), hasta:addDaysISO(todayISO(),30), anchor:todayISO()};
+let CAL_DESDE=CAL.desde, CAL_HASTA=CAL.hasta; // compat
+const DOWfull=['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+function startOfWeek(iso){const d=new Date(iso+'T00:00:00');const off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);return d.toISOString().slice(0,10);}
+function calRange(){
+  if(CAL.mode==='lista')return {desde:CAL.desde,hasta:CAL.hasta};
+  if(CAL.mode==='mes'){const d=new Date(CAL.anchor+'T00:00:00');const a=new Date(d.getFullYear(),d.getMonth(),1);const b=new Date(d.getFullYear(),d.getMonth()+1,0);return {desde:a.toISOString().slice(0,10),hasta:b.toISOString().slice(0,10)};}
+  const ws=startOfWeek(CAL.anchor);return {desde:ws,hasta:addDaysISO(ws,6)};
+}
+
 async function renderCalendario(){
   const v=$('#view');
   const {data:prods}=await sb.from('productos').select('id,nombre_es,aforo_default,idioma').eq('tipo','visita_experiencia').eq('activo',true).order('nombre_es');
+  window._prods=prods||[];
   v.innerHTML=`
     <div class="page-head">
-      <div><h2>Calendario</h2><p>Programa sesiones para toda la temporada de una vez y ajusta aforos por día.</p></div>
+      <div><h2>Calendario</h2><p>Programa la temporada, ajusta aforos y añade reservas. Tres vistas: lista, mes y semana.</p></div>
       <button class="btn primary" onclick="genForm()">+ Generar sesiones</button>
     </div>
-    <div class="toolbar">
-      <div class="field"><label>Desde</label><input type="date" id="calDesde" value="${CAL_DESDE}"></div>
-      <div class="field"><label>Hasta</label><input type="date" id="calHasta" value="${CAL_HASTA}"></div>
-      <button class="btn" onclick="loadSesiones()">Ver</button>
+    <div class="toolbar" style="justify-content:space-between">
+      <div class="seg">
+        <button data-m="lista" onclick="setCalMode('lista')">Lista</button>
+        <button data-m="mes" onclick="setCalMode('mes')">Mes</button>
+        <button data-m="semana" onclick="setCalMode('semana')">Semana</button>
+      </div>
+      <div id="calControls"></div>
     </div>
     <div id="sesContainer" class="card"><div class="empty"><span class="spinner"></span></div></div>`;
-  window._prods=prods||[];
+  setCalMode(CAL.mode);
+}
+function setCalMode(m){
+  CAL.mode=m;
+  document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  const c=$('#calControls');
+  if(m==='lista'){
+    c.innerHTML=`<div style="display:flex;gap:12px;align-items:flex-end">
+      <div class="field"><label>Desde</label><input type="date" id="calDesde" value="${CAL.desde}" onchange="CAL.desde=this.value;loadSesiones()"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="calHasta" value="${CAL.hasta}" onchange="CAL.hasta=this.value;loadSesiones()"></div>
+    </div>`;
+  }else{
+    c.innerHTML=`<div class="calnav"><button onclick="calNav(-1)">‹</button><span class="lbl" id="calLbl"></span><button onclick="calNav(1)">›</button></div>`;
+  }
+  loadSesiones();
+}
+function calNav(d){
+  const a=new Date(CAL.anchor+'T00:00:00');
+  if(CAL.mode==='mes')a.setMonth(a.getMonth()+d); else a.setDate(a.getDate()+d*7);
+  CAL.anchor=a.toISOString().slice(0,10);
   loadSesiones();
 }
 async function loadSesiones(){
-  CAL_DESDE=$('#calDesde').value; CAL_HASTA=$('#calHasta').value;
+  const {desde,hasta}=calRange();
+  CAL_DESDE=desde;CAL_HASTA=hasta;
   const cont=$('#sesContainer'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
-  const {data:ses,error}=await sb.from('sesiones').select('*, productos(nombre_es,idioma,precio)').gte('fecha',CAL_DESDE).lte('fecha',CAL_HASTA).order('fecha').order('hora_inicio');
+  const {data:ses,error}=await sb.from('sesiones').select('*, productos(nombre_es,idioma,precio)').gte('fecha',desde).lte('fecha',hasta).order('fecha').order('hora_inicio');
   if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
   const ids=ses.map(s=>s.id);
   let ocup={};
@@ -390,22 +463,38 @@ async function loadSesiones(){
     const {data:rs}=await sb.from('reservas').select('sesion_id,num_personas,estado').in('sesion_id',ids);
     (rs||[]).forEach(r=>{if(['pendiente_pago','pagada'].includes(r.estado))ocup[r.sesion_id]=(ocup[r.sesion_id]||0)+r.num_personas;});
   }
+  // mapa común para acciones (añadir reserva, aforo, etc.)
+  window._ses={}; window._sesByDay={};
+  (ses||[]).forEach(s=>{
+    const oc=ocup[s.id]||0;
+    s._oc=oc; s._libre=s.aforo-oc;
+    window._ses[s.id]={nombre:s.productos?.nombre_es||'',precio:s.productos?.precio||0,fecha:s.fecha,hora:fHora(s.hora_inicio),libre:s._libre,oc,aforo:s.aforo,estado:s.estado};
+    (window._sesByDay[s.fecha]=window._sesByDay[s.fecha]||[]).push(s);
+  });
+  // etiqueta de navegación en mes/semana
+  if(CAL.mode==='mes'){const d=new Date(CAL.anchor+'T00:00:00');const lbl=$('#calLbl');if(lbl)lbl.textContent=new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(d);}
+  if(CAL.mode==='semana'){const ws=startOfWeek(CAL.anchor);const lbl=$('#calLbl');if(lbl)lbl.textContent=`${fDate(ws)} – ${fDate(addDaysISO(ws,6))}`;}
+
+  if(CAL.mode==='lista')return renderLista(ses,cont);
+  if(CAL.mode==='mes')return renderMes(ses,cont);
+  return renderSemana(ses,cont);
+}
+
+function ocPill(s){return s._libre<=0?'red':(s._libre<=Math.max(1,s.aforo*0.2)?'amber':'green');}
+
+/* ---- Vista LISTA (la de siempre) ---- */
+function renderLista(ses,cont){
   if(!ses.length){cont.innerHTML='<div class="empty">No hay sesiones en ese rango. Usa "Generar sesiones".</div>';return;}
-  const dias=['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  window._ses={}; // mapa para "Añadir reserva"
   cont.innerHTML=`<div class="table-wrap"><table>
     <thead><tr><th>Fecha</th><th>Día</th><th>Hora</th><th>Producto</th><th class="right">Ocupación</th><th>Estado</th><th data-nosort></th></tr></thead>
     <tbody>${ses.map(s=>{
-      const oc=ocup[s.id]||0; const libre=s.aforo-oc;
-      const pillOc=libre<=0?'red':(libre<=Math.max(1,s.aforo*0.2)?'amber':'green');
-      const dow=new Date(s.fecha+'T00:00:00').getDay(); const dn=dias[dow===0?7:dow];
-      window._ses[s.id]={nombre:s.productos?.nombre_es||'',precio:s.productos?.precio||0,fecha:s.fecha,hora:fHora(s.hora_inicio),libre,oc,aforo:s.aforo};
+      const oc=s._oc; const dow=new Date(s.fecha+'T00:00:00').getDay(); const dn=DOWfull[dow===0?7:dow];
       return `<tr>
         <td class="nowrap" data-sort="${s.fecha}"><strong>${fDate(s.fecha)}</strong></td>
         <td class="nowrap" data-sort="${dow===0?7:dow}">${dn}</td>
         <td class="nowrap" data-sort="${s.hora_inicio}">${fHora(s.hora_inicio)}</td>
         <td>${esc(s.productos?.nombre_es||'')} ${s.productos?.idioma?`<span class="muted">(${s.productos.idioma.toUpperCase()})</span>`:''}</td>
-        <td class="right nowrap" data-sort="${oc}"><span class="pill ${pillOc}">${oc}/${s.aforo}</span></td>
+        <td class="right nowrap" data-sort="${oc}"><span class="pill ${ocPill(s)}">${oc}/${s.aforo}</span></td>
         <td data-sort="${s.estado}">${s.estado==='cancelada'?'<span class="pill red">Cancelada</span>':'<span class="pill green">Activa</span>'}</td>
         <td class="right nowrap">
           ${s.estado==='cancelada'?'':`<button class="btn sm primary" onclick="addReservaForm('${s.id}')">+ Reserva</button>
@@ -414,6 +503,59 @@ async function loadSesiones(){
         </td>
       </tr>`;}).join('')}</tbody></table></div>`;
   enableSortAll();
+}
+
+/* ---- Vista MES (rejilla con sesiones dentro de cada día) ---- */
+function renderMes(ses,cont){
+  const d=new Date(CAL.anchor+'T00:00:00'); const y=d.getFullYear(), m=d.getMonth();
+  const firstDow=(new Date(y,m,1).getDay()+6)%7; const dim=new Date(y,m+1,0).getDate(); const todayI=todayISO();
+  let cells=DOWfull.slice(1).map(x=>`<div class="dow">${x}</div>`).join('');
+  for(let i=0;i<firstDow;i++)cells+=`<div class="cell out"></div>`;
+  for(let day=1;day<=dim;day++){
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const list=(window._sesByDay[ds]||[]).slice().sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
+    const chips=list.map(s=>{
+      const cls=s.estado==='cancelada'?'grey':ocPill(s);
+      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')"><b>${fHora(s.hora_inicio)}</b> ${esc((s.productos?.idioma||'').toUpperCase()||s.productos?.nombre_es||'')} · ${s._oc}/${s.aforo}</button>`;
+    }).join('');
+    cells+=`<div class="cell ${ds===todayI?'today':''}"><div class="dn">${day}</div>${chips}</div>`;
+  }
+  cont.innerHTML=`<div class="card-body"><div class="mes">${cells}</div>
+    <p class="muted" style="font-size:12px;margin-top:12px">Cada etiqueta es una sesión (idioma · ocupación). Clic para gestionarla. Verde = hueco · ámbar = casi lleno · rojo = completo.</p></div>`;
+}
+
+/* ---- Vista SEMANA (columnas lun-dom) ---- */
+function renderSemana(ses,cont){
+  const ws=startOfWeek(CAL.anchor); const todayI=todayISO();
+  let cols='';
+  for(let i=0;i<7;i++){
+    const ds=addDaysISO(ws,i); const dd=new Date(ds+'T00:00:00');
+    const list=(window._sesByDay[ds]||[]).slice().sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
+    const cards=list.length?list.map(s=>{
+      const cls=s.estado==='cancelada'?'grey':ocPill(s);
+      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')"><b>${fHora(s.hora_inicio)}</b><br>${esc(s.productos?.nombre_es||'')}<br>${s._oc}/${s.aforo} plazas</button>`;
+    }).join(''):'<div class="muted" style="font-size:11px;text-align:center;padding:10px 0">—</div>';
+    cols+=`<div class="col"><div class="col-h ${ds===todayI?'today':''}"><div class="d">${DOWfull[i+1]}</div><div class="n">${dd.getDate()}</div></div><div class="col-b">${cards}</div></div>`;
+  }
+  cont.innerHTML=`<div class="card-body"><div class="sem">${cols}</div></div>`;
+}
+
+/* ---- Menú de acciones al pinchar una sesión en Mes/Semana ---- */
+function sesActions(id){
+  const s=(window._ses||{})[id]; if(!s)return;
+  const dow=new Date(s.fecha+'T00:00:00').getDay();
+  modal(`
+    <div class="m-h"><h3>${esc(s.nombre)}</h3></div>
+    <div class="m-b">
+      <p style="margin-top:0">${DOWfull[dow===0?7:dow]} ${fDate(s.fecha)} · ${s.hora}</p>
+      <p class="muted">Ocupación: <strong>${s.oc}/${s.aforo}</strong> · ${s.libre} plazas libres · ${s.estado==='cancelada'?'<span style="color:var(--red)">Cancelada</span>':'Activa'}</p>
+      ${s.estado==='cancelada'?'':`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn primary" onclick="closeModal();addReservaForm('${id}')">+ Añadir reserva</button>
+        <button class="btn" onclick="closeModal();editAforo('${id}',${s.aforo},${s.oc})">Ajustar aforo</button>
+        <button class="btn danger" onclick="closeModal();cancelSesion('${id}')">Cancelar sesión</button>
+      </div>`}
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
 }
 
 /* --- Añadir reserva presencial (se cobra en Ágora, ocupa plaza, no genera ticket) --- */

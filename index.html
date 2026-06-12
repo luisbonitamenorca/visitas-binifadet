@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#faf7f2; --surface:#ffffff; --ink:#211d19; --muted:#8c8377;
@@ -541,15 +543,27 @@ function renderSemana(ses,cont){
 }
 
 /* ---- Menú de acciones al pinchar una sesión en Mes/Semana ---- */
-function sesActions(id){
+async function sesActions(id){
   const s=(window._ses||{})[id]; if(!s)return;
   const dow=new Date(s.fecha+'T00:00:00').getDay();
+  // desglose de quién viene
+  const {data:rs}=await sb.from('reservas').select('codigo_reserva,cliente_nombre,num_personas,metodo_pago,estado').eq('sesion_id',id).neq('estado','cancelada').order('created_at');
+  const pago={stripe:'Online',agora_tpv:'Presencial',bono:'Bono'};
+  const grupos=(rs||[]).length?`
+    <div style="margin-top:16px">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px">Quién viene (${(rs||[]).reduce((a,r)=>a+r.num_personas,0)} personas en ${rs.length} ${rs.length===1?'reserva':'reservas'})</div>
+      ${rs.map(r=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span>${esc(r.cliente_nombre)} <span class="muted" style="font-size:12px">· ${pago[r.metodo_pago]||r.metodo_pago}</span></span>
+        <strong>${r.num_personas} ${r.num_personas===1?'pers.':'pers.'}</strong>
+      </div>`).join('')}
+    </div>`:'<p class="muted" style="margin-top:14px">Aún no hay reservas en esta sesión.</p>';
   modal(`
     <div class="m-h"><h3>${esc(s.nombre)}</h3></div>
     <div class="m-b">
       <p style="margin-top:0">${DOWfull[dow===0?7:dow]} ${fDate(s.fecha)} · ${s.hora}</p>
       <p class="muted">Ocupación: <strong>${s.oc}/${s.aforo}</strong> · ${s.libre} plazas libres · ${s.estado==='cancelada'?'<span style="color:var(--red)">Cancelada</span>':'Activa'}</p>
-      ${s.estado==='cancelada'?'':`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+      ${grupos}
+      ${s.estado==='cancelada'?'':`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">
         <button class="btn primary" onclick="closeModal();addReservaForm('${id}')">+ Añadir reserva</button>
         <button class="btn" onclick="closeModal();editAforo('${id}',${s.aforo},${s.oc})">Ajustar aforo</button>
         <button class="btn danger" onclick="closeModal();cancelSesion('${id}')">Cancelar sesión</button>
@@ -734,20 +748,71 @@ async function loadBonos(){
   const cont=$('#bonosList'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
   const {data,error}=await sb.from('bonos').select('*, productos(nombre_es)').order('fecha_venta',{ascending:false}).limit(200);
   if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
+  window._bonos={};
   cont.innerHTML=`<div class="card-h"><h3>Bonos emitidos</h3></div><div class="table-wrap"><table>
-    <thead><tr><th>Código</th><th>Producto</th><th>Comprador</th><th class="right">Importe</th><th>Vendido</th><th>Caduca</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Código</th><th>Incluye</th><th>Comprador / Para</th><th class="right">Importe</th><th>Vendido</th><th>Caduca</th><th>Estado</th><th data-nosort></th></tr></thead>
     <tbody>${data.length?data.map(b=>{
       const est={vendido:'green',canjeado:'grey',caducado:'red'}[b.estado]||'grey';
+      const uds=b.unidades||1;
+      window._bonos[b.id]=b;
       return `<tr>
         <td class="nowrap"><code>${esc(b.codigo_canje)}</code></td>
-        <td>${esc(b.productos?.nombre_es||'—')}</td>
+        <td>${uds>1?`<strong>${uds} ×</strong> `:''}${esc(b.productos?.nombre_es||'—')}</td>
         <td>${esc(b.comprador_nombre)}${b.beneficiario_nombre?`<div class="muted" style="font-size:12px">Para: ${esc(b.beneficiario_nombre)}</div>`:''}</td>
         <td class="right nowrap" data-sort="${b.importe}">${euro(b.importe)}</td>
         <td class="nowrap" data-sort="${(b.fecha_venta||'').slice(0,10)}">${fDate((b.fecha_venta||'').slice(0,10))}</td>
         <td class="nowrap" data-sort="${b.caduca_at?b.caduca_at.slice(0,10):''}">${b.caduca_at?fDate(b.caduca_at.slice(0,10)):'—'}</td>
         <td data-sort="${b.estado}"><span class="pill ${est}">${b.estado}</span>${b.estado==='canjeado'&&b.fecha_canje?`<div class="muted" style="font-size:11px">${fDate(b.fecha_canje.slice(0,10))}</div>`:''}</td>
-      </tr>`;}).join(''):'<tr><td colspan="7"><div class="empty">Aún no hay bonos.</div></td></tr>'}</tbody></table></div>`;
+        <td class="right nowrap"><button class="btn sm" onclick="bonoPDF('${b.id}')">PDF regalo</button></td>
+      </tr>`;}).join(''):'<tr><td colspan="8"><div class="empty">Aún no hay bonos.</div></td></tr>'}</tbody></table></div>`;
   enableSortAll();
+}
+
+/* ---- PDF del bono regalo (con QR, sin precio) ---- */
+async function bonoPDF(id){
+  const b=(window._bonos||{})[id]; if(!b)return;
+  toast('Generando PDF…');
+  const uds=b.unidades||1;
+  const incluye=(uds>1?uds+' × ':'')+(b.productos?.nombre_es||'Experiencia Binifadet');
+  const benef=b.beneficiario_nombre||b.comprador_nombre||'';
+  const caduca=b.caduca_at?fDate(b.caduca_at.slice(0,10)):'';
+  let qr='';
+  try{qr=await QRCode.toDataURL(b.codigo_canje,{margin:1,width:400});}catch(e){}
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a5',orientation:'portrait'}); // 148 x 210
+  const W=148, cx=W/2;
+  // marco
+  doc.setDrawColor(110,20,35); doc.setLineWidth(0.6); doc.rect(10,10,W-20,210-20);
+  doc.setDrawColor(176,134,58); doc.setLineWidth(0.2); doc.rect(13,13,W-26,210-26);
+  // marca
+  doc.setFont('times','normal'); doc.setTextColor(110,20,35); doc.setFontSize(26);
+  doc.text('BINIFADET',cx,34,{align:'center'});
+  doc.setFontSize(9); doc.setTextColor(140,130,115); doc.setCharSpace(2);
+  doc.text('B O D E G A   ·   M E N O R C A',cx,41,{align:'center'}); doc.setCharSpace(0);
+  // título
+  doc.setFontSize(22); doc.setTextColor(40,40,38);
+  doc.text('Bono Regalo',cx,60,{align:'center'});
+  // beneficiario
+  doc.setFontSize(11); doc.setTextColor(140,130,115);
+  doc.text('Para',cx,74,{align:'center'});
+  doc.setFont('times','italic'); doc.setFontSize(18); doc.setTextColor(40,40,38);
+  doc.text(benef,cx,83,{align:'center'});
+  // incluye
+  doc.setFont('times','normal'); doc.setFontSize(11); doc.setTextColor(140,130,115);
+  doc.text('Disfruta de',cx,98,{align:'center'});
+  doc.setFontSize(16); doc.setTextColor(110,20,35);
+  doc.text(incluye,cx,107,{align:'center',maxWidth:W-40});
+  // QR
+  if(qr)doc.addImage(qr,'PNG',cx-22,118,44,44);
+  // código y caducidad
+  doc.setFontSize(12); doc.setTextColor(40,40,38);
+  doc.text('Código: '+b.codigo_canje,cx,172,{align:'center'});
+  if(caduca){doc.setFontSize(9); doc.setTextColor(140,130,115); doc.text('Válido hasta el '+caduca,cx,179,{align:'center'});}
+  // pie
+  doc.setFontSize(9); doc.setTextColor(140,130,115);
+  doc.text('Presenta este bono en la bodega para canjear tu experiencia.',cx,192,{align:'center',maxWidth:W-30});
+  doc.save('bono_'+b.codigo_canje+'.pdf');
+  toast('PDF descargado','ok');
 }
 async function validarBono(){
   const cod=$('#bCodigo').value.trim().toUpperCase();
@@ -760,12 +825,14 @@ async function validarBono(){
   if(!r.valido){
     box.innerHTML=`<div class="hint" style="background:var(--red-soft);border-color:#f3c9c6;color:var(--red)">❌ ${esc(r.motivo)}</div>`;return;
   }
+  // unidades del bono (para precargar nº de personas)
+  let uds=1; try{const {data:bb}=await sb.from('bonos').select('unidades').eq('codigo_canje',cod).single(); if(bb&&bb.unidades)uds=bb.unidades;}catch(e){}
   // válido -> mostrar canje
   box.innerHTML=`
-    <div class="hint" style="background:var(--green-soft);border-color:#bfe0cb;color:var(--green)">✅ Bono válido · ${esc(r.concepto||'')} · ${euro(r.importe)} · caduca ${r.caduca_at?fDate(r.caduca_at.slice(0,10)):'—'}</div>
+    <div class="hint" style="background:var(--green-soft);border-color:#bfe0cb;color:var(--green)">✅ Bono válido · ${esc(r.concepto||'')}${uds>1?' ('+uds+' uds.)':''} · caduca ${r.caduca_at?fDate(r.caduca_at.slice(0,10)):'—'}</div>
     <div class="row2">
       <div class="field"><label>Fecha de la visita</label><input type="date" id="cz_fecha" value="${todayISO()}" onchange="loadSesionesCanje()"></div>
-      <div class="field"><label>Nº de personas</label><input type="number" id="cz_pers" value="1" min="1"></div>
+      <div class="field"><label>Nº de personas</label><input type="number" id="cz_pers" value="${uds}" min="1"></div>
     </div>
     <div class="field"><label>Sesión</label><select id="cz_sesion"><option>Cargando…</option></select></div>
     <div class="field"><label>Nombre (opcional)</label><input id="cz_nombre" placeholder="Beneficiario del bono"></div>
@@ -801,27 +868,38 @@ function bonoVentaForm(){
     <div class="m-b">
       <div class="hint">Registra un bono vendido en recepción. El online vendrá con la pasarela de pago.</div>
       <div class="field"><label>Producto (bono)</label>
-        <select id="bv_prod" onchange="bvPrecio()">${prods.map(p=>`<option value="${p.id}" data-precio="${p.precio}">${esc(p.nombre_es)} · ${euro(p.precio)}</option>`).join('')}</select></div>
+        <select id="bv_prod" onchange="bvCalc()">${prods.map(p=>`<option value="${p.id}" data-precio="${p.precio}">${esc(p.nombre_es)} · ${euro(p.precio)}</option>`).join('')}</select></div>
+      <div class="row2">
+        <div class="field"><label>Cantidad</label>
+          <div class="stepper" style="display:inline-flex"><button onclick="bvStep(-1)">−</button><span id="bv_uds" style="min-width:34px;text-align:center;display:inline-block">1</span><button onclick="bvStep(1)">+</button></div></div>
+        <div class="field"><label>Importe total (€)</label><input id="bv_importe" type="number" step="0.01"></div>
+      </div>
+      <p class="muted" id="bv_desglose" style="margin-top:-4px;font-size:13px"></p>
       <div class="row2">
         <div class="field"><label>Comprador</label><input id="bv_comprador"></div>
         <div class="field"><label>Email comprador</label><input id="bv_email" type="email"></div>
       </div>
-      <div class="row2">
-        <div class="field"><label>Beneficiario (opcional)</label><input id="bv_benef"></div>
-        <div class="field"><label>Importe (€)</label><input id="bv_importe" type="number" step="0.01"></div>
-      </div>
+      <div class="field"><label>Beneficiario (para el regalo)</label><input id="bv_benef" placeholder="Nombre de quien recibe el regalo"></div>
       <div class="field"><label>Caducidad (opcional, vacío = automática)</label><input id="bv_caduca" type="date"></div>
     </div>
     <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="bonoVentaSave()">Emitir bono</button></div>`);
-  bvPrecio();
+  bvCalc();
 }
-function bvPrecio(){const o=$('#bv_prod').selectedOptions[0];$('#bv_importe').value=o?o.dataset.precio:'';}
+function bvStep(d){const el=$('#bv_uds');let n=parseInt(el.textContent)+d;if(n<1)n=1;el.textContent=n;bvCalc();}
+function bvCalc(){
+  const o=$('#bv_prod').selectedOptions[0]; const precio=o?parseFloat(o.dataset.precio):0;
+  const uds=parseInt($('#bv_uds').textContent)||1;
+  $('#bv_importe').value=(precio*uds).toFixed(2);
+  $('#bv_desglose').textContent=uds>1?`${uds} × ${euro(precio)} = ${euro(precio*uds)}`:'';
+}
 async function bonoVentaSave(){
+  const uds=parseInt($('#bv_uds').textContent)||1;
   const rec={
     producto_id:$('#bv_prod').value,
     comprador_nombre:$('#bv_comprador').value.trim(),
     comprador_email:$('#bv_email').value.trim(),
     beneficiario_nombre:$('#bv_benef').value.trim()||null,
+    unidades:uds,
     importe:parseFloat($('#bv_importe').value)||0
   };
   if($('#bv_caduca').value)rec.caduca_at=$('#bv_caduca').value+'T23:59:59';

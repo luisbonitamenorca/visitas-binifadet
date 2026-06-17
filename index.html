@@ -20,6 +20,7 @@
     --green:#2f7d4f; --green-soft:#e7f3ec;
     --red:#b3261e; --red-soft:#fbeae9;
     --amber:#9a6b16; --amber-soft:#fbf2dd;
+    --blue:#2f5fa6; --blue-soft:#e8eef7;
     --radius:12px; --shadow:0 1px 2px rgba(33,29,25,.04),0 4px 16px rgba(33,29,25,.06);
   }
   *{box-sizing:border-box}
@@ -146,7 +147,7 @@
   /* vista MES */
   .mes{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .mes .dow{background:#fcfaf6;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;padding:9px 0}
-  .mes .cell{background:#fff;min-height:96px;padding:6px 6px 8px;display:flex;flex-direction:column;gap:3px}
+  .mes .cell{background:#fff;min-height:120px;padding:6px 6px 8px;display:flex;flex-direction:column;gap:3px}
   .mes .cell.out{background:#fafaf7}
   .mes .cell .dn{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
   .mes .cell.today .dn{color:var(--wine)}
@@ -157,7 +158,21 @@
   .ses-chip.amber{background:var(--amber-soft);color:var(--amber)}
   .ses-chip.red{background:var(--red-soft);color:var(--red)}
   .ses-chip.grey{background:#efeae1;color:var(--muted);text-decoration:line-through}
+  /* estados según ocupación (esquema Binifadet) */
+  .ses-chip.s-empty{background:#eef7f0;color:#356b49}
+  .ses-chip.s-part{background:#c9e9d5;color:#14512f}
+  .ses-chip.s-full{background:var(--red-soft);color:var(--red)}
+  .ses-chip.s-cancel{background:#efeae1;color:var(--muted);text-decoration:line-through}
+  .ses-chip.maridaje{border-left:3px solid var(--blue)}
   .ses-chip b{font-weight:700}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}
+  .dot.mar{background:var(--blue)} .dot.note{background:var(--amber)}
+  .center{text-align:center}
+  .callegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px;align-items:center}
+  .callegend .sw{display:inline-block;width:13px;height:13px;border-radius:3px;vertical-align:middle;margin-right:5px}
+  .daygen{border:none;background:transparent;color:var(--muted);font-size:15px;line-height:1;width:18px;height:18px;border-radius:5px;cursor:pointer;opacity:0;transition:.1s;padding:0}
+  .mes .cell:hover .daygen{opacity:1}
+  .daygen:hover{background:var(--wine-soft);color:var(--wine)}
 
   /* vista SEMANA */
   .sem{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
@@ -470,7 +485,7 @@ async function loadSesiones(){
   (ses||[]).forEach(s=>{
     const oc=ocup[s.id]||0;
     s._oc=oc; s._libre=s.aforo-oc;
-    window._ses[s.id]={nombre:s.productos?.nombre_es||'',precio:s.productos?.precio||0,fecha:s.fecha,hora:fHora(s.hora_inicio),libre:s._libre,oc,aforo:s.aforo,estado:s.estado};
+    window._ses[s.id]={nombre:s.productos?.nombre_es||'',precio:s.productos?.precio||0,fecha:s.fecha,hora:fHora(s.hora_inicio),hora_raw:s.hora_inicio,libre:s._libre,oc,aforo:s.aforo,estado:s.estado,nota:s.nota||'',visible_web:s.visible_web!==false,maridaje:esMaridaje(s),idioma_label:langLabel(s.productos?.nombre_es),producto_id:s.producto_id};
     (window._sesByDay[s.fecha]=window._sesByDay[s.fecha]||[]).push(s);
   });
   // etiqueta de navegación en mes/semana
@@ -483,6 +498,23 @@ async function loadSesiones(){
 }
 
 function ocPill(s){return s._libre<=0?'red':(s._libre<=Math.max(1,s.aforo*0.2)?'amber':'green');}
+/* Estado de color del chip según ocupación: vacía / con inscritos / completa / cancelada */
+function chipState(s){
+  if(s.estado==='cancelada')return 's-cancel';
+  const oc=s._oc||0, af=s.aforo||0;
+  if(oc<=0)return 's-empty';
+  if(oc>=af)return 's-full';
+  return 's-part';
+}
+/* Maridaje detectado por nombre (no hay campo dedicado todavía) */
+function esMaridaje(s){const n=((s&&s.productos&&s.productos.nombre_es)||(s&&s.nombre)||'').toLowerCase();return /marida/.test(n);}
+/* Idioma legible a partir del nombre del producto (el campo idioma no es fiable) */
+function langLabel(name){const n=(name||'').toLowerCase();
+  if(/franc/.test(n))return 'Francés';
+  if(/ingl|angl|english/.test(n))return 'Inglés';
+  if(/portug/.test(n))return 'Portugués';
+  if(/espa|castell/.test(n))return 'Español';
+  return '';}
 
 /* ---- Vista LISTA (la de siempre) ---- */
 function renderLista(ses,cont){
@@ -495,13 +527,12 @@ function renderLista(ses,cont){
         <td class="nowrap" data-sort="${s.fecha}"><strong>${fDate(s.fecha)}</strong></td>
         <td class="nowrap" data-sort="${dow===0?7:dow}">${dn}</td>
         <td class="nowrap" data-sort="${s.hora_inicio}">${fHora(s.hora_inicio)}</td>
-        <td>${esc(s.productos?.nombre_es||'')} ${s.productos?.idioma?`<span class="muted">(${s.productos.idioma.toUpperCase()})</span>`:''}</td>
+        <td>${esc(s.productos?.nombre_es||'')} ${langLabel(s.productos?.nombre_es)?`<span class="muted">· ${langLabel(s.productos?.nombre_es)}</span>`:''} ${esMaridaje(s)?'<span class="dot mar" title="Maridaje"></span>':''}${s.nota?`<span class="dot note" title="${esc(s.nota)}"></span>`:''}</td>
         <td class="right nowrap" data-sort="${oc}"><span class="pill ${ocPill(s)}">${oc}/${s.aforo}</span></td>
         <td data-sort="${s.estado}">${s.estado==='cancelada'?'<span class="pill red">Cancelada</span>':'<span class="pill green">Activa</span>'}</td>
         <td class="right nowrap">
-          ${s.estado==='cancelada'?'':`<button class="btn sm primary" onclick="addReservaForm('${s.id}')">+ Reserva</button>
-          <button class="btn sm" onclick="editAforo('${s.id}',${s.aforo},${oc})">Aforo</button>
-          <button class="btn sm danger" onclick="cancelSesion('${s.id}')">Cancelar</button>`}
+          <button class="btn sm" onclick="sesActions('${s.id}')">Gestionar</button>
+          ${s.estado==='cancelada'?'':`<button class="btn sm primary" onclick="addReservaForm('${s.id}')">+ Reserva</button>`}
         </td>
       </tr>`;}).join('')}</tbody></table></div>`;
   enableSortAll();
@@ -517,13 +548,23 @@ function renderMes(ses,cont){
     const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const list=(window._sesByDay[ds]||[]).slice().sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
     const chips=list.map(s=>{
-      const cls=s.estado==='cancelada'?'grey':ocPill(s);
-      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')"><b>${fHora(s.hora_inicio)}</b> ${esc((s.productos?.idioma||'').toUpperCase()||s.productos?.nombre_es||'')} · ${s._oc}/${s.aforo}</button>`;
+      const cls=chipState(s)+(esMaridaje(s)?' maridaje':'');
+      const dots=(esMaridaje(s)?'<span class="dot mar" title="Maridaje"></span>':'')+(s.nota?'<span class="dot note" title="Con comentario"></span>':'');
+      const lang=langLabel(s.productos?.nombre_es);
+      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')">${dots}<b>${fHora(s.hora_inicio)}</b> ${esc(lang||s.productos?.nombre_es||'')} · ${s._oc}/${s.aforo}</button>`;
     }).join('');
-    cells+=`<div class="cell ${ds===todayI?'today':''}"><div class="dn">${day}</div>${chips}</div>`;
+    cells+=`<div class="cell ${ds===todayI?'today':''}"><div class="dn" style="display:flex;justify-content:space-between;align-items:center">${day}<button class="daygen" title="Crear sesión este día" onclick="nuevaSesionDia('${ds}')">+</button></div>${chips}</div>`;
   }
   cont.innerHTML=`<div class="card-body"><div class="mes">${cells}</div>
-    <p class="muted" style="font-size:12px;margin-top:12px">Cada etiqueta es una sesión (idioma · ocupación). Clic para gestionarla. Verde = hueco · ámbar = casi lleno · rojo = completo.</p></div>`;
+    <div class="callegend">
+      <span><span class="sw" style="background:#eef7f0"></span>Vacía</span>
+      <span><span class="sw" style="background:#c9e9d5"></span>Con inscritos</span>
+      <span><span class="sw" style="background:var(--red-soft)"></span>Completa</span>
+      <span><span class="sw" style="background:#efeae1"></span>Cancelada</span>
+      <span><span class="dot mar"></span>Maridaje</span>
+      <span><span class="dot note"></span>Con comentario</span>
+      <span class="muted">· Pasa el ratón por un día y pulsa <b>+</b> para crear una sesión.</span>
+    </div></div>`;
 }
 
 /* ---- Vista SEMANA (columnas lun-dom) ---- */
@@ -534,10 +575,11 @@ function renderSemana(ses,cont){
     const ds=addDaysISO(ws,i); const dd=new Date(ds+'T00:00:00');
     const list=(window._sesByDay[ds]||[]).slice().sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
     const cards=list.length?list.map(s=>{
-      const cls=s.estado==='cancelada'?'grey':ocPill(s);
-      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')"><b>${fHora(s.hora_inicio)}</b><br>${esc(s.productos?.nombre_es||'')}<br>${s._oc}/${s.aforo} plazas</button>`;
+      const cls=chipState(s)+(esMaridaje(s)?' maridaje':'');
+      const dots=(esMaridaje(s)?'<span class="dot mar" title="Maridaje"></span>':'')+(s.nota?'<span class="dot note" title="Con comentario"></span>':'');
+      return `<button class="ses-chip ${cls}" onclick="sesActions('${s.id}')">${dots}<b>${fHora(s.hora_inicio)}</b><br>${esc(s.productos?.nombre_es||'')}${langLabel(s.productos?.nombre_es)?'<br><span style="opacity:.8">'+langLabel(s.productos?.nombre_es)+'</span>':''}<br>${s._oc}/${s.aforo} plazas</button>`;
     }).join(''):'<div class="muted" style="font-size:11px;text-align:center;padding:10px 0">—</div>';
-    cols+=`<div class="col"><div class="col-h ${ds===todayI?'today':''}"><div class="d">${DOWfull[i+1]}</div><div class="n">${dd.getDate()}</div></div><div class="col-b">${cards}</div></div>`;
+    cols+=`<div class="col"><div class="col-h ${ds===todayI?'today':''}"><div class="d">${DOWfull[i+1]}</div><div class="n">${dd.getDate()}</div></div><div class="col-b">${cards}<button class="btn sm ghost" style="font-size:11px;justify-content:center;margin-top:2px" onclick="nuevaSesionDia('${ds}')">+ sesión</button></div></div>`;
   }
   cont.innerHTML=`<div class="card-body"><div class="sem">${cols}</div></div>`;
 }
@@ -558,15 +600,25 @@ async function sesActions(id){
       </div>`).join('')}
     </div>`:'<p class="muted" style="margin-top:14px">Aún no hay reservas en esta sesión.</p>';
   modal(`
-    <div class="m-h"><h3>${esc(s.nombre)}</h3></div>
+    <div class="m-h"><h3>${esc(s.nombre)}${s.idioma_label?` · <span class="muted" style="font-size:14px">${s.idioma_label}</span>`:''}</h3></div>
     <div class="m-b">
-      <p style="margin-top:0">${DOWfull[dow===0?7:dow]} ${fDate(s.fecha)} · ${s.hora}</p>
-      <p class="muted">Ocupación: <strong>${s.oc}/${s.aforo}</strong> · ${s.libre} plazas libres · ${s.estado==='cancelada'?'<span style="color:var(--red)">Cancelada</span>':'Activa'}</p>
+      <p style="margin-top:0">${DOWfull[dow===0?7:dow]} ${fDate(s.fecha)} · ${s.hora}${s.maridaje?' · <span class="pill" style="background:var(--blue-soft);color:var(--blue)">Maridaje</span>':''}</p>
+      <p class="muted">Ocupación: <strong>${s.oc}/${s.aforo}</strong> · ${s.libre} plazas libres · ${s.estado==='cancelada'?'<span style="color:var(--red)">Cancelada</span>':'Activa'} · ${s.visible_web?'Visible en web':'<span style="color:var(--amber)">Oculta en web</span>'}</p>
+      <div style="margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fcfaf6">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <strong style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Comentario</strong>
+          <button class="btn sm" onclick="closeModal();editNota('${id}')">${s.nota?'Editar':'Añadir'}</button>
+        </div>
+        <div style="margin-top:6px">${s.nota?esc(s.nota):'<span class="muted">Sin comentarios.</span>'}</div>
+      </div>
       ${grupos}
-      ${s.estado==='cancelada'?'':`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">
+      ${s.estado==='cancelada'?'':`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
         <button class="btn primary" onclick="closeModal();addReservaForm('${id}')">+ Añadir reserva</button>
         <button class="btn" onclick="closeModal();editAforo('${id}',${s.aforo},${s.oc})">Ajustar aforo</button>
-        <button class="btn danger" onclick="closeModal();cancelSesion('${id}')">Cancelar sesión</button>
+        <button class="btn" onclick="closeModal();duplicarSesion('${id}')">Duplicar</button>
+        <button class="btn" onclick="toggleVisibleWeb('${id}',${s.visible_web})">${s.visible_web?'Ocultar en web':'Mostrar en web'}</button>
+        <button class="btn danger" onclick="closeModal();cancelSesion('${id}')">Cancelar</button>
+        <button class="btn danger" onclick="closeModal();deleteSesion('${id}',${s.oc})">Eliminar</button>
       </div>`}
     </div>
     <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
@@ -588,6 +640,7 @@ function addReservaForm(sesionId){
         <div class="field"><label>País (opcional)</label><input id="ar_pais"></div>
         <div class="field"><label>Email (opcional)</label><input id="ar_email" type="email"></div>
       </div>
+      <div class="field"><label>Teléfono (opcional)</label><input id="ar_tel"></div>
       <p class="muted">Importe estimado: <strong id="ar_importe">${euro(s.precio)}</strong> <span style="font-size:12px">(${euro(s.precio)}/persona)</span></p>
     </div>
     <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="addReservaSave('${sesionId}')">Añadir reserva</button></div>`);
@@ -602,7 +655,7 @@ async function addReservaSave(sesionId){
     p_sesion_id:sesionId,
     p_cliente_nombre:$('#ar_nombre').value.trim()||'Reserva mostrador',
     p_cliente_email:$('#ar_email').value.trim()||'',
-    p_cliente_telefono:null,
+    p_cliente_telefono:$('#ar_tel').value.trim()||null,
     p_cliente_pais:$('#ar_pais').value.trim()||null,
     p_idioma_preferido:null,
     p_num_personas:personas,
@@ -674,32 +727,116 @@ async function cancelSesion(id){
   if(error){toast('Error: '+error.message,'err');return;}
   toast('Sesión cancelada','ok');loadSesiones();
 }
+/* --- Comentario de la sesión (usa sesiones.nota) --- */
+function editNota(id){
+  const s=(window._ses||{})[id]; if(!s)return;
+  modal(`<div class="m-h"><h3>Comentario de la sesión</h3></div>
+    <div class="m-b"><p class="muted" style="margin-top:0">${esc(s.nombre)} · ${fDate(s.fecha)} ${s.hora}</p>
+      <div class="field"><label>Comentario (interno, no se muestra en la web)</label><textarea id="nt" rows="4">${esc(s.nota||'')}</textarea></div></div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveNota('${id}')">Guardar</button></div>`);
+}
+async function saveNota(id){
+  const nota=$('#nt').value.trim()||null;
+  const {error}=await sb.from('sesiones').update({nota}).eq('id',id);
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast('Comentario guardado','ok');loadSesiones();
+}
+/* --- Visibilidad en la web pública (requiere columna visible_web) --- */
+async function toggleVisibleWeb(id,current){
+  const {error}=await sb.from('sesiones').update({visible_web:!current}).eq('id',id);
+  if(error){toast('Falta aplicar la migración (visible_web). '+error.message,'err');return;}
+  toast(current?'Sesión oculta en web':'Sesión visible en web','ok');closeModal();loadSesiones();
+}
+/* --- Eliminar definitivamente (solo si no tiene reservas) --- */
+async function deleteSesion(id,oc){
+  if(oc>0){toast('No se puede eliminar: tiene reservas. Cancélala en su lugar.','err');return;}
+  if(!confirm('¿Eliminar definitivamente esta sesión? No se puede deshacer.'))return;
+  const {error}=await sb.from('sesiones').delete().eq('id',id);
+  if(error){toast('Error: '+error.message,'err');return;}
+  toast('Sesión eliminada','ok');loadSesiones();
+}
+/* --- Duplicar una sesión a otras fechas --- */
+function duplicarSesion(id){
+  const s=(window._ses||{})[id]; if(!s)return;
+  modal(`<div class="m-h"><h3>Duplicar sesión</h3></div>
+    <div class="m-b">
+      <div class="hint">Crea una copia de “${esc(s.nombre)}” (${s.hora}, aforo ${s.aforo}) en las fechas que indiques.</div>
+      <div class="field"><label>Fechas (una por línea o separadas por comas, formato AAAA-MM-DD)</label><textarea id="dup_fechas" rows="3">${addDaysISO(s.fecha,7)}</textarea></div>
+      <div class="row2">
+        <div class="field"><label>Hora</label><input type="time" id="dup_hora" value="${s.hora_raw?s.hora_raw.slice(0,5):s.hora}"></div>
+        <div class="field"><label>Aforo</label><input type="number" id="dup_aforo" value="${s.aforo}"></div>
+      </div>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="duplicarSave('${id}')">Crear sesiones</button></div>`);
+}
+async function duplicarSave(id){
+  const s=(window._ses||{})[id]; if(!s)return;
+  const raw=$('#dup_fechas').value.split(/[\n,]+/).map(x=>x.trim()).filter(Boolean);
+  const fechas=[...new Set(raw)].filter(f=>/^\d{4}-\d{2}-\d{2}$/.test(f));
+  if(!fechas.length){toast('Pon al menos una fecha válida (AAAA-MM-DD)','err');return;}
+  const hora=$('#dup_hora').value; const aforo=parseInt($('#dup_aforo').value)||s.aforo;
+  const rows=fechas.map(f=>({producto_id:s.producto_id,fecha:f,hora_inicio:hora,aforo,estado:'activa'}));
+  const {error}=await sb.from('sesiones').insert(rows);
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast(fechas.length+(fechas.length===1?' sesión creada':' sesiones creadas'),'ok');loadSesiones();
+}
+/* --- Crear una sesión suelta pinchando un día del calendario --- */
+function nuevaSesionDia(fecha){
+  const prods=window._prods||[];
+  if(!prods.length){toast('Crea primero un producto de tipo visita','err');return;}
+  modal(`<div class="m-h"><h3>Nueva sesión · ${fDate(fecha)}</h3></div>
+    <div class="m-b">
+      <div class="field"><label>Producto</label>
+        <select id="ns_prod" onchange="nsAforo()">${prods.map(p=>`<option value="${p.id}" data-aforo="${p.aforo_default||''}">${esc(p.nombre_es)}</option>`).join('')}</select></div>
+      <div class="row2">
+        <div class="field"><label>Hora</label><input type="time" id="ns_hora" value="11:30"></div>
+        <div class="field"><label>Aforo</label><input type="number" id="ns_aforo" value="${prods[0].aforo_default||12}"></div>
+      </div>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="nuevaSesionSave('${fecha}')">Crear</button></div>`);
+}
+function nsAforo(){const o=$('#ns_prod').selectedOptions[0];if(o&&o.dataset.aforo)$('#ns_aforo').value=o.dataset.aforo;}
+async function nuevaSesionSave(fecha){
+  const rec={producto_id:$('#ns_prod').value,fecha,hora_inicio:$('#ns_hora').value,aforo:parseInt($('#ns_aforo').value)||12,estado:'activa'};
+  const {error}=await sb.from('sesiones').insert(rec);
+  if(error){toast('Error: '+error.message,'err');return;}
+  closeModal();toast('Sesión creada','ok');loadSesiones();
+}
 
 /* =================================================================
    RESERVAS
    ================================================================= */
 async function renderReservas(){
   const v=$('#view');
-  v.innerHTML=`<div class="page-head"><div><h2>Reservas</h2><p>Últimas reservas registradas. Cancelar una libera su plaza automáticamente.</p></div></div>
+  v.innerHTML=`<div class="page-head"><div><h2>Reservas</h2><p>Busca por nombre, email o nº de comanda. Cancelar libera la plaza automáticamente.</p></div></div>
     <div class="toolbar">
+      <div class="field" style="flex:1;min-width:240px"><label>Buscar</label><input id="rBuscar" placeholder="Nombre, email o nº de comanda…" oninput="reservasBuscarDebounce()"></div>
       <div class="field"><label>Estado</label><select id="rEstado" onchange="loadReservas()">
-        <option value="">Todos</option><option value="pagada">Pagadas</option><option value="pendiente_pago">Pendientes de pago</option><option value="cancelada">Canceladas</option></select></div>
+        <option value="">Todos</option><option value="pagada">Pagadas</option><option value="pendiente_pago">A medias / pendientes</option><option value="cancelada">Canceladas</option></select></div>
     </div>
     <div id="resContainer" class="card"><div class="empty"><span class="spinner"></span></div></div>`;
   loadReservas();
 }
+let _resTimer;
+function reservasBuscarDebounce(){clearTimeout(_resTimer);_resTimer=setTimeout(loadReservas,300);}
 async function loadReservas(){
   const cont=$('#resContainer'); cont.innerHTML='<div class="empty"><span class="spinner"></span></div>';
-  let q=sb.from('reservas').select('*, sesiones(fecha,hora_inicio,productos(nombre_es))').order('created_at',{ascending:false}).limit(200);
-  const est=$('#rEstado').value; if(est)q=q.eq('estado',est);
+  const term=($('#rBuscar')?.value||'').trim();
+  let q=sb.from('reservas').select('*, sesiones(fecha,hora_inicio,productos(nombre_es))').order('created_at',{ascending:false});
+  const est=$('#rEstado')?.value; if(est)q=q.eq('estado',est);
+  if(term){const t=term.replace(/[%,()]/g,' ').trim();if(t)q=q.or(`cliente_nombre.ilike.%${t}%,cliente_email.ilike.%${t}%,codigo_reserva.ilike.%${t}%`);}
+  q=q.limit(term?500:200);
   const {data,error}=await q;
   if(error)return cont.innerHTML=`<div class="empty">Error: ${esc(error.message)}</div>`;
-  if(!data.length){cont.innerHTML='<div class="empty">No hay reservas.</div>';return;}
+  if(!data.length){cont.innerHTML='<div class="empty">No hay reservas que coincidan.</div>';return;}
+  window._res={};
   cont.innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Código</th><th>Cliente</th><th>Visita</th><th>Sesión</th><th class="right">Pers.</th><th class="right">Importe</th><th>Pago</th><th>Estado</th><th data-nosort></th></tr></thead>
+    <thead><tr><th>Código</th><th>Cliente</th><th>Visita</th><th>Sesión</th><th class="right">Pers.</th><th class="right">Importe</th><th>Pago</th><th>Estado</th><th class="center">Entrada</th><th data-nosort></th></tr></thead>
     <tbody>${data.map(r=>{
+      window._res[r.id]=r;
       const s=r.sesiones; const pago={stripe:'Online',agora_tpv:'Presencial (Ágora)',bono:'Bono'}[r.metodo_pago]||r.metodo_pago;
       const estPill={pagada:'green',pendiente_pago:'amber',cancelada:'red'}[r.estado]||'grey';
+      const chk=r.check_in_at?'<span class="pill green">✓</span>':'<span class="muted" style="font-size:12px">—</span>';
       return `<tr>
         <td class="nowrap"><code>${esc(r.codigo_reserva)}</code></td>
         <td>${esc(r.cliente_nombre)}<div class="muted" style="font-size:12px">${esc(r.cliente_email||'')}${r.cliente_pais?' · '+esc(r.cliente_pais):''}</div></td>
@@ -709,9 +846,82 @@ async function loadReservas(){
         <td class="right nowrap" data-sort="${r.importe_total}">${euro(r.importe_total)}</td>
         <td data-sort="${r.metodo_pago}">${pago}</td>
         <td data-sort="${r.estado}"><span class="pill ${estPill}">${r.estado.replace('_',' ')}</span></td>
-        <td class="right nowrap">${r.estado!=='cancelada'?`<button class="btn sm danger" onclick="cancelReserva('${esc(r.codigo_reserva)}')">Cancelar</button>`:''}</td>
+        <td class="center">${chk}</td>
+        <td class="right nowrap"><button class="btn sm" onclick="reservaDetalle('${r.id}')">Ver</button></td>
       </tr>`;}).join('')}</tbody></table></div>`;
   enableSortAll();
+}
+/* --- Ficha completa de la reserva --- */
+function reservaDetalle(id){
+  const r=(window._res||{})[id]; if(!r)return;
+  const s=r.sesiones; const pago={stripe:'Online',agora_tpv:'Presencial (Ágora)',bono:'Bono'}[r.metodo_pago]||r.metodo_pago;
+  const estPill={pagada:'green',pendiente_pago:'amber',cancelada:'red'}[r.estado]||'grey';
+  modal(`
+    <div class="m-h"><h3>Reserva ${esc(r.codigo_reserva)}</h3></div>
+    <div class="m-b">
+      <table style="width:100%"><tbody style="font-size:14px">
+        <tr><td class="muted" style="width:140px">Nº de comanda</td><td><code>${esc(r.codigo_reserva)}</code></td></tr>
+        <tr><td class="muted">Cliente</td><td>${esc(r.cliente_nombre||'—')}</td></tr>
+        <tr><td class="muted">Email</td><td>${esc(r.cliente_email||'—')}</td></tr>
+        <tr><td class="muted">Teléfono</td><td>${esc(r.cliente_telefono||'—')}</td></tr>
+        <tr><td class="muted">País</td><td>${esc(r.cliente_pais||'—')}</td></tr>
+        <tr><td class="muted">Visita</td><td>${esc(s?.productos?.nombre_es||'—')}</td></tr>
+        <tr><td class="muted">Sesión</td><td>${s?fDate(s.fecha)+' · '+fHora(s.hora_inicio):'—'}</td></tr>
+        <tr><td class="muted">Personas</td><td>${r.num_personas}</td></tr>
+        <tr><td class="muted">Importe</td><td>${euro(r.importe_total)}</td></tr>
+        <tr><td class="muted">Pago</td><td>${pago}</td></tr>
+        <tr><td class="muted">Estado</td><td><span class="pill ${estPill}">${r.estado.replace('_',' ')}</span></td></tr>
+        <tr><td class="muted">Entrada</td><td>${r.check_in_at?('✓ Escaneada · '+fDate((r.check_in_at||'').slice(0,10))):'No escaneada'}</td></tr>
+      </tbody></table>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn" onclick="ticketPDF('${id}')">↓ Ticket PDF</button>
+        ${r.estado!=='cancelada'&&!r.check_in_at?`<button class="btn" onclick="marcarEntrada('${id}')">Marcar entrada</button>`:''}
+        ${r.check_in_at?`<button class="btn ghost" onclick="quitarEntrada('${id}')">Quitar entrada</button>`:''}
+        ${r.estado!=='cancelada'?`<button class="btn danger" onclick="closeModal();cancelReserva('${esc(r.codigo_reserva)}')">Cancelar reserva</button>`:''}
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:12px">El escaneo con el móvil se conectará aquí; de momento puedes marcar la entrada a mano.</p>
+    </div>
+    <div class="m-f"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
+async function marcarEntrada(id){
+  const {error}=await sb.from('reservas').update({check_in_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Falta aplicar la migración (check_in_at). '+error.message,'err');return;}
+  toast('Entrada marcada','ok');closeModal();loadReservas();
+}
+async function quitarEntrada(id){
+  const {error}=await sb.from('reservas').update({check_in_at:null}).eq('id',id);
+  if(error){toast('Error: '+error.message,'err');return;}
+  toast('Entrada anulada','ok');closeModal();loadReservas();
+}
+/* --- Ticket de la reserva en PDF (con QR del código) --- */
+async function ticketPDF(id){
+  const r=(window._res||{})[id]; if(!r)return;
+  const s=r.sesiones;
+  toast('Generando ticket…');
+  let qr=''; try{qr=await QRCode.toDataURL(r.codigo_reserva,{margin:1,width:400});}catch(e){}
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a6',orientation:'portrait'}); // 105 x 148
+  const W=105, cx=W/2;
+  doc.setDrawColor(110,20,35); doc.setLineWidth(0.5); doc.rect(7,7,W-14,148-14);
+  doc.setFont('times','normal'); doc.setTextColor(110,20,35); doc.setFontSize(20);
+  doc.text('BINIFADET',cx,22,{align:'center'});
+  doc.setFontSize(8); doc.setTextColor(140,130,115); doc.setCharSpace(1.5);
+  doc.text('B O D E G A   ·   M E N O R C A',cx,28,{align:'center'}); doc.setCharSpace(0);
+  doc.setDrawColor(220,210,195); doc.line(14,33,W-14,33);
+  doc.setFontSize(13); doc.setTextColor(40,40,38);
+  doc.text(String(s?.productos?.nombre_es||'Visita'),cx,43,{align:'center',maxWidth:W-24});
+  doc.setFontSize(11); doc.setTextColor(80,75,68);
+  if(s)doc.text(fDate(s.fecha)+' · '+fHora(s.hora_inicio),cx,51,{align:'center'});
+  doc.setFontSize(10);
+  doc.text(`${r.num_personas} ${r.num_personas===1?'persona':'personas'}`,cx,59,{align:'center'});
+  if(qr)doc.addImage(qr,'PNG',cx-20,66,40,40);
+  doc.setFontSize(11); doc.setTextColor(40,40,38);
+  doc.text(String(r.codigo_reserva),cx,114,{align:'center'});
+  doc.setFontSize(8); doc.setTextColor(140,130,115);
+  if(r.cliente_nombre)doc.text(String(r.cliente_nombre),cx,121,{align:'center',maxWidth:W-20});
+  doc.text('Presenta este ticket a la entrada de la bodega.',cx,132,{align:'center',maxWidth:W-20});
+  doc.save('ticket_'+r.codigo_reserva+'.pdf');
+  toast('Ticket descargado','ok');
 }
 async function cancelReserva(codigo){
   if(!confirm('¿Cancelar la reserva '+codigo+'? Se liberará la plaza.'))return;
